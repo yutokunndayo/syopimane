@@ -1,132 +1,152 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>買い物スキャンアプリ</title>
+  <title>買い物カゴスキャナー</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 1rem;
-    }
-    #result {
-      font-size: 1.2rem;
-      margin-bottom: 1rem;
-    }
-    .item {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 5px;
-    }
-    button {
-      margin-left: 5px;
-    }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    button { margin: 0 4px; }
   </style>
 </head>
 <body>
-  <h1>📷 買い物スキャンアプリ</h1>
-  <p>バーコードを読み取って商品を追加しよう！</p>
+  <h2>買い物バーコードスキャン</h2>
+  <div id="scanner" style="width: 100%; max-width: 400px;"></div>
+  <p id="barcode-result">バーコード: なし</p>
+  <p id="total">合計金額: ¥0</p>
+  <button onclick="shareCart()">🧾 カゴ内容をQR共有</button>
+  <div id="qrcode" style="margin: 1em 0;"></div>
 
-  <input type="file" accept="image/*" capture="environment" onchange="onFileChange(event)" />
-  <div id="result">スキャン結果：なし</div>
+  <h3>🛒 カゴの中身</h3>
+  <table>
+    <thead>
+      <tr><th>商品名</th><th>価格</th><th>個数</th><th>操作</th></tr>
+    </thead>
+    <tbody id="cart-body"></tbody>
+  </table>
 
-  <h2>🛒 カゴの中</h2>
-  <div id="cartList"></div>
-  <p><strong>合計金額: ¥<span id="total">0</span></strong></p>
-
-  <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
   <script>
-    // 商品マスターデータ（仮）
-    const productDB = {
-      "4901777018686": { name: "ポテトチップス", price: 150 },
-      "4902102111227": { name: "コカ・コーラ", price: 120 },
-      "4901234567890": { name: "テスト商品", price: 300 },
-    };
+    let productDB = JSON.parse(localStorage.getItem('productDB')) || {};
+    let cartItems = {};
 
-    let cart = JSON.parse(localStorage.getItem("cart") || "{}");
-
-    function updateCartDisplay() {
-      const cartList = document.getElementById("cartList");
-      const totalElem = document.getElementById("total");
-      cartList.innerHTML = "";
+    function updateTotal() {
       let total = 0;
+      for (let code in cartItems) {
+        let item = cartItems[code];
+        total += item.price * item.quantity;
+      }
+      document.getElementById("total").innerText = `合計金額: ¥${total}`;
+    }
 
-      for (const code in cart) {
-        const item = productDB[code];
-        if (!item) continue;
-        const quantity = cart[code];
-        const subtotal = item.price * quantity;
-        total += subtotal;
-
-        const div = document.createElement("div");
-        div.className = "item";
-        div.innerHTML = `
-          ${item.name}（¥${item.price} × ${quantity}）= ¥${subtotal}
-          <span>
-            <button onclick="addQty('${code}')">＋</button>
-            <button onclick="subQty('${code}')">−</button>
-            <button onclick="removeItem('${code}')">🗑</button>
-          </span>
+    function renderCart() {
+      let html = "";
+      for (let code in cartItems) {
+        let item = cartItems[code];
+        html += `
+          <tr>
+            <td>${item.name}</td>
+            <td>¥${item.price}</td>
+            <td>
+              <button onclick="changeQuantity('${code}', -1)">−</button>
+              ${item.quantity}
+              <button onclick="changeQuantity('${code}', 1)">＋</button>
+            </td>
+            <td><button onclick="removeItem('${code}')">削除</button></td>
+          </tr>
         `;
-        cartList.appendChild(div);
       }
-
-      totalElem.textContent = total;
-      localStorage.setItem("cart", JSON.stringify(cart));
+      document.getElementById("cart-body").innerHTML = html;
+      updateTotal();
     }
 
-    function addQty(code) {
-      cart[code] = (cart[code] || 0) + 1;
-      updateCartDisplay();
-    }
-
-    function subQty(code) {
-      if (cart[code] > 1) {
-        cart[code]--;
+    function handleBarcode(barcode) {
+      document.getElementById("barcode-result").innerText = "バーコード: " + barcode;
+      if (productDB[barcode]) {
+        addToCart(barcode);
       } else {
-        delete cart[code];
-      }
-      updateCartDisplay();
-    }
-
-    function removeItem(code) {
-      delete cart[code];
-      updateCartDisplay();
-    }
-
-    async function onFileChange(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, canvas.width, canvas.height);
-
-        const resultDiv = document.getElementById("result");
-        if (code) {
-          resultDiv.textContent = "スキャン結果: " + code.data;
-
-          if (productDB[code.data]) {
-            cart[code.data] = (cart[code.data] || 0) + 1;
-            updateCartDisplay();
-          } else {
-            alert("商品が登録されていません！");
-          }
-        } else {
-          resultDiv.textContent = "QRコードが読み取れませんでした。";
+        let name = prompt("商品名を入力してください:");
+        let price = parseFloat(prompt("価格を入力してください:"));
+        if (name && !isNaN(price)) {
+          productDB[barcode] = { name, price };
+          localStorage.setItem('productDB', JSON.stringify(productDB));
+          addToCart(barcode);
         }
-      };
+      }
     }
 
-    // 初期表示
-    updateCartDisplay();
+    function addToCart(barcode) {
+      let product = productDB[barcode];
+      if (!cartItems[barcode]) {
+        cartItems[barcode] = { ...product, quantity: 0 };
+      }
+      cartItems[barcode].quantity++;
+      renderCart();
+    }
+
+    function changeQuantity(barcode, delta) {
+      if (cartItems[barcode]) {
+        cartItems[barcode].quantity += delta;
+        if (cartItems[barcode].quantity <= 0) {
+          delete cartItems[barcode];
+        }
+        renderCart();
+      }
+    }
+
+    function removeItem(barcode) {
+      delete cartItems[barcode];
+      renderCart();
+    }
+
+    function shareCart() {
+      const data = JSON.stringify(cartItems);
+      const encoded = encodeURIComponent(data);
+      const url = `${location.origin}${location.pathname}?cart=${encoded}`;
+      document.getElementById("qrcode").innerHTML = "";
+      new QRCode(document.getElementById("qrcode"), url);
+    }
+
+    window.addEventListener('load', () => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('cart')) {
+        try {
+          cartItems = JSON.parse(decodeURIComponent(params.get('cart')));
+          renderCart();
+        } catch (e) {
+          console.error("QRデータの読み込みに失敗しました", e);
+        }
+      }
+    });
+
+    Quagga.init({
+      inputStream: {
+        type: "LiveStream",
+        target: document.querySelector('#scanner'),
+        constraints: {
+          facingMode: "environment"
+        }
+      },
+      decoder: {
+        readers: ["ean_reader"]
+      }
+    }, function (err) {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      Quagga.start();
+    });
+
+    Quagga.onDetected((data) => {
+      const barcode = data.codeResult.code;
+      if (barcode) {
+        Quagga.pause();
+        handleBarcode(barcode);
+        setTimeout(() => Quagga.start(), 1500);
+      }
+    });
   </script>
 </body>
 </html>
