@@ -44,80 +44,105 @@
     </thead>
     <tbody id="cart-body"></tbody>
   </table>
+<script>
+  const resultSpan = document.getElementById('scan-result');
+  const cartBody = document.getElementById('cart-body');
+  const totalEl = document.getElementById('total');
 
-  <script>
-    const resultSpan = document.getElementById('scan-result');
-    const cartBody = document.getElementById('cart-body');
-    const totalEl = document.getElementById('total');
+  const productDB = JSON.parse(localStorage.getItem("productDB") || "{}");
+  const cart = {};
 
-    // 商品データ（バーコード→{名前, 価格}）
-    const productDB = JSON.parse(localStorage.getItem("productDB") || "{}");
+  let lastScannedCode = null;
+  let scanningPaused = false;
 
-    // カゴの中身：{バーコード: 数量}
-    const cart = {};
+  function updateCartDisplay() {
+    cartBody.innerHTML = "";
+    let total = 0;
 
-    function updateCartDisplay() {
-      cartBody.innerHTML = "";
-      let total = 0;
+    for (const code in cart) {
+      const qty = cart[code];
+      const product = productDB[code];
+      const name = product?.name || "未登録";
+      const price = product?.price || 0;
+      const subtotal = price * qty;
+      total += subtotal;
 
-      for (const code in cart) {
-        const qty = cart[code];
-        const product = productDB[code];
-        const name = product?.name || "未登録";
-        const price = product?.price || 0;
-        const subtotal = price * qty;
-        total += subtotal;
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${name}</td>
+        <td>${price}</td>
+        <td>${qty}</td>
+        <td>
+          <button onclick="changeQty('${code}', -1)">−</button>
+          <button onclick="changeQty('${code}', 1)">＋</button>
+          <button onclick="removeItem('${code}')">🗑️</button>
+        </td>
+      `;
+      cartBody.appendChild(row);
+    }
 
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${name}</td>
-          <td>${price}</td>
-          <td>${qty}</td>
-          <td>
-            <button onclick="changeQty('${code}', -1)">−</button>
-            <button onclick="changeQty('${code}', 1)">＋</button>
-            <button onclick="removeItem('${code}')">🗑️</button>
-          </td>
-        `;
-        cartBody.appendChild(row);
+    totalEl.textContent = total;
+  }
+
+  function changeQty(code, delta) {
+    cart[code] = (cart[code] || 0) + delta;
+    if (cart[code] <= 0) delete cart[code];
+    updateCartDisplay();
+  }
+
+  function removeItem(code) {
+    delete cart[code];
+    updateCartDisplay();
+  }
+
+  function onScanSuccess(code) {
+    if (scanningPaused || code === lastScannedCode) return;
+
+    lastScannedCode = code;
+    scanningPaused = true;
+    resultSpan.textContent = code;
+
+    if (!productDB[code]) {
+      const name = prompt("商品名を入力してください：");
+      const price = parseInt(prompt("価格を入力してください："), 10);
+      if (name && !isNaN(price)) {
+        productDB[code] = { name, price };
+        localStorage.setItem("productDB", JSON.stringify(productDB));
+      } else {
+        alert("登録失敗");
+        scanningPaused = false;
+        return;
       }
-
-      totalEl.textContent = total;
     }
 
-    function changeQty(code, delta) {
-      cart[code] = (cart[code] || 0) + delta;
-      if (cart[code] <= 0) delete cart[code];
-      updateCartDisplay();
-    }
+    cart[code] = (cart[code] || 0) + 1;
+    updateCartDisplay();
 
-    function removeItem(code) {
-      delete cart[code];
-      updateCartDisplay();
-    }
+    setTimeout(() => {
+      scanningPaused = false;
+    }, 2000); // 2秒間スキャン停止
+  }
 
-    function onScanSuccess(code) {
-      resultSpan.textContent = code;
-
-      if (!productDB[code]) {
-        const name = prompt("商品名を入力してください：");
-        const price = parseInt(prompt("価格を入力してください："), 10);
-        if (name && !isNaN(price)) {
-          productDB[code] = { name, price };
-          localStorage.setItem("productDB", JSON.stringify(productDB));
-        } else {
-          alert("登録失敗");
-          return;
+  const html5QrCode = new Html5Qrcode("reader");
+  Html5Qrcode.getCameras().then(devices => {
+    if (devices && devices.length) {
+      const cameraId = devices[0].id;
+      html5QrCode.start(
+        cameraId,
+        { fps: 10, qrbox: 250 },
+        onScanSuccess,
+        errorMessage => {
+          // スキャン失敗時は何もしない
         }
-      }
-
-      cart[code] = (cart[code] || 0) + 1;
-      updateCartDisplay();
+      ).catch(err => {
+        console.error("カメラ起動失敗:", err);
+      });
     }
+  }).catch(err => {
+    console.error("カメラ取得失敗:", err);
+  });
+</script>
 
-    // バーコード読み取り開始
-    const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-    scanner.render(onScanSuccess);
-  </script>
+
 </body>
 </html>
