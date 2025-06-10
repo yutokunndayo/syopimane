@@ -45,6 +45,7 @@
     <tbody id="cart-body"></tbody>
   </table>
 
+  <!-- スキャン音 -->
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
 
   <script>
@@ -131,22 +132,15 @@
     }
 
     const html5QrCode = new Html5Qrcode("reader");
-    Html5Qrcode.getCameras().then(devices => {
-      if (devices && devices.length) {
-        const cameraId = devices[0].id;
-        html5QrCode.start(
-          cameraId,
-          { fps: 10, qrbox: 250 },
-          onScanSuccess,
-          errorMessage => {
-            // スキャン失敗時は何もしない
-          }
-        ).catch(err => {
-          console.error("カメラ起動失敗:", err);
-        });
+    html5QrCode.start(
+      { facingMode: "environment" }, // 外カメラを指定
+      { fps: 10, qrbox: 250 },
+      onScanSuccess,
+      errorMessage => {
+        // スキャン失敗時は何もしない
       }
-    }).catch(err => {
-      console.error("カメラ取得失敗:", err);
+    ).catch(err => {
+      console.error("カメラ起動失敗:", err);
     });
   </script>
 </body>
