@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>買い物スキャンアプリ</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 1rem;
+    }
+    #result {
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+    }
+    .item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+    }
+    button {
+      margin-left: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>📷 買い物スキャンアプリ</h1>
+  <p>バーコードを読み取って商品を追加しよう！</p>
+
+  <input type="file" accept="image/*" capture="environment" onchange="onFileChange(event)" />
+  <div id="result">スキャン結果：なし</div>
+
+  <h2>🛒 カゴの中</h2>
+  <div id="cartList"></div>
+  <p><strong>合計金額: ¥<span id="total">0</span></strong></p>
+
+  <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+  <script>
+    // 商品マスターデータ（仮）
+    const productDB = {
+      "4901777018686": { name: "ポテトチップス", price: 150 },
+      "4902102111227": { name: "コカ・コーラ", price: 120 },
+      "4901234567890": { name: "テスト商品", price: 300 },
+    };
+
+    let cart = JSON.parse(localStorage.getItem("cart") || "{}");
+
+    function updateCartDisplay() {
+      const cartList = document.getElementById("cartList");
+      const totalElem = document.getElementById("total");
+      cartList.innerHTML = "";
+      let total = 0;
+
+      for (const code in cart) {
+        const item = productDB[code];
+        if (!item) continue;
+        const quantity = cart[code];
+        const subtotal = item.price * quantity;
+        total += subtotal;
+
+        const div = document.createElement("div");
+        div.className = "item";
+        div.innerHTML = `
+          ${item.name}（¥${item.price} × ${quantity}）= ¥${subtotal}
+          <span>
+            <button onclick="addQty('${code}')">＋</button>
+            <button onclick="subQty('${code}')">−</button>
+            <button onclick="removeItem('${code}')">🗑</button>
+          </span>
+        `;
+        cartList.appendChild(div);
+      }
+
+      totalElem.textContent = total;
+      localStorage.setItem("cart", JSON.stringify(cart));
+    }
+
+    function addQty(code) {
+      cart[code] = (cart[code] || 0) + 1;
+      updateCartDisplay();
+    }
+
+    function subQty(code) {
+      if (cart[code] > 1) {
+        cart[code]--;
+      } else {
+        delete cart[code];
+      }
+      updateCartDisplay();
+    }
+
+    function removeItem(code) {
+      delete cart[code];
+      updateCartDisplay();
+    }
+
+    async function onFileChange(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, canvas.width, canvas.height);
+
+        const resultDiv = document.getElementById("result");
+        if (code) {
+          resultDiv.textContent = "スキャン結果: " + code.data;
+
+          if (productDB[code.data]) {
+            cart[code.data] = (cart[code.data] || 0) + 1;
+            updateCartDisplay();
+          } else {
+            alert("商品が登録されていません！");
+          }
+        } else {
+          resultDiv.textContent = "QRコードが読み取れませんでした。";
+        }
+      };
+    }
+
+    // 初期表示
+    updateCartDisplay();
+  </script>
+</body>
+</html>
