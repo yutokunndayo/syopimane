@@ -132,15 +132,29 @@
     }
 
     const html5QrCode = new Html5Qrcode("reader");
-    html5QrCode.start(
-      { facingMode: "environment" }, // 外カメラを指定
-      { fps: 10, qrbox: 250 },
-      onScanSuccess,
-      errorMessage => {
-        // スキャン失敗時は何もしない
+
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length) {
+        const backCamera = devices.find(device =>
+          device.label.toLowerCase().includes("back")
+        );
+        const selectedCameraId = backCamera ? backCamera.id : devices[0].id;
+
+        html5QrCode.start(
+          selectedCameraId,
+          { fps: 10, qrbox: 250 },
+          onScanSuccess,
+          errorMessage => {
+            // スキャン失敗時は何もしない
+          }
+        ).catch(err => {
+          console.error("カメラ起動失敗:", err);
+        });
+      } else {
+        console.error("カメラが見つかりませんでした。");
       }
-    ).catch(err => {
-      console.error("カメラ起動失敗:", err);
+    }).catch(err => {
+      console.error("カメラ取得失敗:", err);
     });
   </script>
 </body>
