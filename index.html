@@ -50,14 +50,12 @@
 
   <script>
     const API_TOKEN = "a34d52dc8c4c76c103bf25faa800cb39";
-
     const scanResult = document.getElementById("scan-result");
     const cartBody = document.getElementById("cart-body");
     const totalEl = document.getElementById("total");
 
     const productDB = JSON.parse(localStorage.getItem("productDB") || "{}");
     const cart = {};
-
     let lastScanned = null;
     let paused = false;
 
@@ -121,9 +119,9 @@
         .then(res => res.json())
         .then(data => {
           const name = data?.product?.product_name || "";
-          callback(name, 0);
+          callback(name);
         })
-        .catch(() => callback("", 0));
+        .catch(() => callback(""));
     }
 
     function onScan(code) {
@@ -138,9 +136,14 @@
         updateCart();
         resumeScan();
       } else {
-        fetchProduct(code, (name, price) => {
+        fetchProduct(code, name => {
           const inputName = name || prompt("商品名を入力してください：") || "不明";
-          const inputPrice = parseInt(prompt("価格を入力してください："), 10) || 0;
+          const inputPrice = parseInt(prompt("価格を入力してください："), 10);
+          if (isNaN(inputPrice)) {
+            alert("価格が無効です。スキャンを無視します。");
+            resumeScan();
+            return;
+          }
           productDB[code] = { name: inputName, price: inputPrice };
           cart[code] = 1;
           updateCart();
