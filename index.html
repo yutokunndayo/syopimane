@@ -2,32 +2,15 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ショピマネ🛒</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 1em;
-    }
-    #reader {
-      width: 100%;
-      max-width: 400px;
-      margin: 0 auto;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 1em;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 0.5em;
-      text-align: center;
-    }
-    button {
-      padding: 0.3em 0.5em;
-    }
+    body { font-family: sans-serif; padding: 1em; }
+    #reader { width: 100%; max-width: 400px; margin: 0 auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; }
+    button { padding: 0.3em 0.5em; }
   </style>
 </head>
 <body>
@@ -38,41 +21,41 @@
 
   <table>
     <thead>
-      <tr>
-        <th>商品</th><th>価格</th><th>個数</th><th>操作</th>
-      </tr>
+      <tr><th>商品</th><th>価格</th><th>個数</th><th>操作</th></tr>
     </thead>
     <tbody id="cart-body"></tbody>
   </table>
 
-  <!-- 効果音 -->
-  <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
+  <audio id="beep-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" preload="auto"></audio>
 
   <script>
-    const API_TOKEN = "a34d52dc8c4c76c103bf25faa800cb39";
-    const scanResult = document.getElementById("scan-result");
-    const cartBody = document.getElementById("cart-body");
-    const totalEl = document.getElementById("total");
+    const resultSpan = document.getElementById('scan-result');
+    const cartBody = document.getElementById('cart-body');
+    const totalEl = document.getElementById('total');
+    const beepSound = document.getElementById('beep-sound');
 
+    const API_KEY = "a34d52dc8c4c76c103bf25faa800cb39";
     const productDB = JSON.parse(localStorage.getItem("productDB") || "{}");
     const cart = {};
-    let lastScanned = null;
-    let paused = false;
 
-    function updateCart() {
+    let lastScannedCode = null;
+    let scanningPaused = false;
+
+    function updateCartDisplay() {
       cartBody.innerHTML = "";
       let total = 0;
-
       for (const code in cart) {
         const qty = cart[code];
-        const product = productDB[code] || { name: "未登録", price: 0 };
-        const subtotal = product.price * qty;
+        const product = productDB[code];
+        const name = product?.name || "未登録";
+        const price = product?.price || 0;
+        const subtotal = price * qty;
         total += subtotal;
 
         const row = document.createElement("tr");
         row.innerHTML = `
-          <td contenteditable="true" onblur="editName('${code}', this.textContent)">${product.name}</td>
-          <td contenteditable="true" onblur="editPrice('${code}', this.textContent)">${product.price}</td>
+          <td ondblclick="editProduct('${code}')">${name}</td>
+          <td>${price}</td>
           <td>${qty}</td>
           <td>
             <button onclick="changeQty('${code}', -1)">−</button>
@@ -82,98 +65,113 @@
         `;
         cartBody.appendChild(row);
       }
-
       totalEl.textContent = total;
-      localStorage.setItem("productDB", JSON.stringify(productDB));
     }
 
     function changeQty(code, delta) {
       cart[code] = (cart[code] || 0) + delta;
       if (cart[code] <= 0) delete cart[code];
-      updateCart();
+      updateCartDisplay();
     }
 
     function removeItem(code) {
       delete cart[code];
-      updateCart();
+      updateCartDisplay();
     }
 
-    function editName(code, newName) {
-      if (productDB[code]) {
-        productDB[code].name = newName;
-        updateCart();
+    function editProduct(code) {
+      const current = productDB[code];
+      const newName = prompt("商品名を修正：", current?.name || "");
+      const newPrice = parseInt(prompt("価格を修正：", current?.price || 0), 10);
+      if (newName && !isNaN(newPrice)) {
+        productDB[code] = { name: newName, price: newPrice };
+        localStorage.setItem("productDB", JSON.stringify(productDB));
+        updateCartDisplay();
       }
     }
 
-    function editPrice(code, newPrice) {
-      const price = parseInt(newPrice, 10);
-      if (!isNaN(price) && productDB[code]) {
-        productDB[code].price = price;
-        updateCart();
-      }
-    }
-
-    function fetchProduct(code, callback) {
-      const url = `https://world.openfoodfacts.org/api/v0/product/${code}.json?user_token=${API_TOKEN}`;
+    function fetchFromJANAPI(code, callback) {
+      const url = `https://api.janapi.jp/api/jan/${code}?apikey=${API_KEY}`;
       fetch(url)
         .then(res => res.json())
         .then(data => {
-          const name = data?.product?.product_name || "";
-          callback(name);
-        })
-        .catch(() => callback(""));
+          if (data.status === "OK") {
+            const name = data.name || "不明な商品";
+            const price = data.price || parseInt(prompt("価格がAPIにないため手入力してください:"), 10) || 0;
+            callback({ name, price });
+          } else {
+            const name = prompt("商品名を入力してください：");
+            const price = parseInt(prompt("価格を入力してください："), 10);
+            if (name && !isNaN(price)) {
+              callback({ name, price });
+            } else {
+              alert("登録失敗");
+              scanningPaused = false;
+            }
+          }
+        }).catch(() => {
+          alert("API接続に失敗しました。手動で入力してください。");
+          const name = prompt("商品名を入力してください：");
+          const price = parseInt(prompt("価格を入力してください："), 10);
+          if (name && !isNaN(price)) {
+            callback({ name, price });
+          } else {
+            alert("登録失敗");
+            scanningPaused = false;
+          }
+        });
     }
 
-    function onScan(code) {
-      if (paused || code === lastScanned) return;
-      paused = true;
-      lastScanned = code;
-      scanResult.textContent = code;
-      document.getElementById("beep-sound").play();
+    function onScanSuccess(code) {
+      if (scanningPaused || code === lastScannedCode) return;
+      lastScannedCode = code;
+      scanningPaused = true;
+      resultSpan.textContent = code;
+      beepSound.play();
 
-      if (productDB[code]) {
-        cart[code] = (cart[code] || 0) + 1;
-        updateCart();
-        resumeScan();
-      } else {
-        fetchProduct(code, name => {
-          const inputName = name || prompt("商品名を入力してください：") || "不明";
-          const inputPrice = parseInt(prompt("価格を入力してください："), 10);
-          if (isNaN(inputPrice)) {
-            alert("価格が無効です。スキャンを無視します。");
-            resumeScan();
-            return;
-          }
-          productDB[code] = { name: inputName, price: inputPrice };
-          cart[code] = 1;
-          updateCart();
-          resumeScan();
+      if (!productDB[code]) {
+        fetchFromJANAPI(code, ({ name, price }) => {
+          productDB[code] = { name, price };
+          localStorage.setItem("productDB", JSON.stringify(productDB));
+          cart[code] = (cart[code] || 0) + 1;
+          updateCartDisplay();
+          resumeScanLater();
         });
+      } else {
+        cart[code] = (cart[code] || 0) + 1;
+        updateCartDisplay();
+        resumeScanLater();
       }
     }
 
-    function resumeScan() {
+    function resumeScanLater() {
       setTimeout(() => {
-        paused = false;
-        lastScanned = null;
+        scanningPaused = false;
+        lastScannedCode = null;
       }, 2000);
     }
 
     const html5QrCode = new Html5Qrcode("reader");
+
     Html5Qrcode.getCameras().then(devices => {
       if (devices && devices.length) {
-        const cam = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
+        const backCamera = devices.find(device =>
+          device.label.toLowerCase().includes("back")
+        );
+        const selectedCameraId = backCamera ? backCamera.id : devices[0].id;
         html5QrCode.start(
-          cam.id,
+          selectedCameraId,
           { fps: 10, qrbox: 250 },
-          onScan,
-          err => {}
+          onScanSuccess,
+          errorMessage => { /* スキャン失敗時は何もしない */ }
         ).catch(err => {
           console.error("カメラ起動失敗:", err);
         });
       } else {
-        alert("カメラが見つかりません");
+        alert("カメラが見つかりませんでした。");
       }
+    }).catch(err => {
+      alert("カメラの取得に失敗しました。");
     });
   </script>
 </body>
