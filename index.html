@@ -1,160 +1,108 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>ショピマネ🛒</title>
+  <meta charset="UTF-8"/>
+  <title>ショピマネ API版</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 1em;
-    }
-    #reader {
-      width: 100%;
-      max-width: 400px;
-      margin: 0 auto;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 1em;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 0.5em;
-      text-align: center;
-    }
-    button {
-      padding: 0.3em 0.5em;
-    }
+    body { font-family:sans-serif; padding:1em; background:#f5f5f5 }
+    #reader { width:100%; max-width:400px; margin:auto }
+    table { width:100%; border-collapse:collapse; margin-top:1em; background:#fff }
+    th,td { border:1px solid #ccc; padding:0.5em; text-align:center }
   </style>
 </head>
 <body>
-  <h1>📷 ショピマネ</h1>
+  <h1>📷 ショピマネ API版</h1>
   <div id="reader"></div>
   <p>読み取りコード：<span id="scan-result">---</span></p>
   <p>合計金額：<strong id="total">0</strong> 円</p>
-
   <table>
-    <thead>
-      <tr>
-        <th>商品</th><th>価格</th><th>個数</th><th>操作</th>
-      </tr>
-    </thead>
+    <thead><tr><th>商品</th><th>価格</th><th>個数</th><th>操作</th></tr></thead>
     <tbody id="cart-body"></tbody>
   </table>
 
-  <!-- スキャン音 -->
-  <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
-
   <script>
-    const resultSpan = document.getElementById('scan-result');
+    const scanResult = document.getElementById('scan-result');
     const cartBody = document.getElementById('cart-body');
     const totalEl = document.getElementById('total');
 
-    const productDB = JSON.parse(localStorage.getItem("productDB") || "{}");
+    const productDB = {};
     const cart = {};
+    let lastScanned = null, paused = false;
+    const APPID = 'YOUR_APP_ID'; // ← ここを取得したアプリIDに置き換えてください
 
-    let lastScannedCode = null;
-    let scanningPaused = false;
-
-    function updateCartDisplay() {
-      cartBody.innerHTML = "";
-      let total = 0;
-
-      for (const code in cart) {
+    function updateCart() {
+      cartBody.innerHTML = '';
+      let tot = 0;
+      for (let code in cart) {
         const qty = cart[code];
-        const product = productDB[code];
-        const name = product?.name || "未登録";
-        const price = product?.price || 0;
-        const subtotal = price * qty;
-        total += subtotal;
-
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${name}</td>
-          <td>${price}</td>
+        const prod = productDB[code] || {name:'？',price:0};
+        const sub = prod.price * qty;
+        tot += sub;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${prod.name}</td>
+          <td>${prod.price}</td>
           <td>${qty}</td>
           <td>
-            <button onclick="changeQty('${code}', -1)">−</button>
-            <button onclick="changeQty('${code}', 1)">＋</button>
-            <button onclick="removeItem('${code}')">🗑️</button>
-          </td>
-        `;
-        cartBody.appendChild(row);
+            <button onclick="change('${code}',-1)">−</button>
+            <button onclick="change('${code}',1)">＋</button>
+            <button onclick="del('${code}')">🗑️</button>
+          </td>`;
+        cartBody.appendChild(tr);
       }
-
-      totalEl.textContent = total;
+      totalEl.textContent = tot;
     }
 
-    function changeQty(code, delta) {
-      cart[code] = (cart[code] || 0) + delta;
-      if (cart[code] <= 0) delete cart[code];
-      updateCartDisplay();
+    function change(code, d) {
+      cart[code] = (cart[code]||0)+d;
+      if (cart[code]<=0) delete cart[code];
+      updateCart();
+    }
+    function del(code) { delete cart[code]; updateCart(); }
+
+    function fetchProduct(code, callback) {
+      fetch(`https://api.jancodelookup.com/?appId=${APPID}&type=code&query=${code}`)
+        .then(r => r.json()).then(json => {
+          if (json.product && json.product.length>0) {
+            const p = json.product[0];
+            callback(p.itemName, parseInt(p.price || 0));
+          } else callback(null);
+        }).catch(e => callback(null));
     }
 
-    function removeItem(code) {
-      delete cart[code];
-      updateCartDisplay();
-    }
+    function onScan(code) {
+      if (paused || code===lastScanned) return;
+      paused = true; lastScanned = code;
+      scanResult.textContent = code;
 
-    function onScanSuccess(code) {
-      if (scanningPaused || code === lastScannedCode) return;
-
-      lastScannedCode = code;
-      scanningPaused = true;
-      resultSpan.textContent = code;
-
-      // 🔊 スキャン音を鳴らす
-      document.getElementById("beep-sound").play();
-
-      if (!productDB[code]) {
-        const name = prompt("商品名を入力してください：");
-        const price = parseInt(prompt("価格を入力してください："), 10);
-        if (name && !isNaN(price)) {
-          productDB[code] = { name, price };
-          localStorage.setItem("productDB", JSON.stringify(productDB));
-        } else {
-          alert("登録失敗");
-          scanningPaused = false;
-          return;
-        }
-      }
-
-      cart[code] = (cart[code] || 0) + 1;
-      updateCartDisplay();
-
-      setTimeout(() => {
-        scanningPaused = false;
-        lastScannedCode = null;
-      }, 2000); // 2秒間スキャン停止
-    }
-
-    const html5QrCode = new Html5Qrcode("reader");
-
-    Html5Qrcode.getCameras().then(devices => {
-      if (devices && devices.length) {
-        const backCamera = devices.find(device =>
-          device.label.toLowerCase().includes("back")
-        );
-        const selectedCameraId = backCamera ? backCamera.id : devices[0].id;
-
-        html5QrCode.start(
-          selectedCameraId,
-          { fps: 10, qrbox: 250 },
-          onScanSuccess,
-          errorMessage => {
-            // スキャン失敗時は何もしない
-          }
-        ).catch(err => {
-          console.error("カメラ起動失敗:", err);
-        });
+      if (productDB[code]) {
+        cart[code] = (cart[code]||0)+1;
+        updateCart(); paused=false;
       } else {
-        console.error("カメラが見つかりませんでした。");
+        fetchProduct(code, (name, price) => {
+          if (name) {
+            productDB[code] = {name, price};
+          } else {
+            const nm = prompt("商品名？");
+            const pr = parseInt(prompt("価格？"),10);
+            productDB[code] = {name:nm, price:pr};
+          }
+          cart[code] = (cart[code]||0)+1;
+          updateCart(); paused=false;
+        });
       }
-    }).catch(err => {
-      console.error("カメラ取得失敗:", err);
+
+      setTimeout(()=>{ paused=false; lastScanned=null }, 2000);
+    }
+
+    const scanner = new Html5Qrcode("reader");
+    Html5Qrcode.getCameras().then(devs => {
+      if(devs && devs.length){
+        const bs = devs.find(d=>d.label.toLowerCase().includes('back'));
+        scanner.start(bs?bs.id:devs[0].id, {fps:10,qrbox:250}, onScan, e=>{});
+      }
     });
   </script>
 </body>
