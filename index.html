@@ -6,28 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 1em;
-    }
-    #reader {
-      width: 100%;
-      max-width: 400px;
-      margin: 0 auto;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 1em;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 0.5em;
-      text-align: center;
-    }
-    button {
-      padding: 0.3em 0.5em;
-    }
+    body { font-family: sans-serif; padding: 1em; }
+    #reader { width: 100%; max-width: 400px; margin: 0 auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; }
+    button { padding: 0.3em 0.5em; }
   </style>
 </head>
 <body>
@@ -38,14 +21,11 @@
 
   <table>
     <thead>
-      <tr>
-        <th>商品</th><th>価格</th><th>個数</th><th>操作</th>
-      </tr>
+      <tr><th>商品</th><th>価格</th><th>個数</th><th>操作</th></tr>
     </thead>
     <tbody id="cart-body"></tbody>
   </table>
 
-  <!-- 効果音 -->
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
 
   <script>
@@ -118,7 +98,9 @@
       fetch(url)
         .then(res => res.json())
         .then(data => {
-          const name = data?.product?.product_name || "";
+          const jpName = data?.product?.product_name_ja || data?.product?.generic_name_ja;
+          const fallback = data?.product?.product_name;
+          const name = jpName || fallback || "";
           callback(name);
         })
         .catch(() => callback(""));
