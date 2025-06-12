@@ -6,108 +6,88 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
-    * {
-      box-sizing: border-box;
-    }
     body {
-      font-family: "Helvetica Neue", sans-serif;
+      font-family: "Helvetica", sans-serif;
       margin: 0;
-      padding: 0;
+      padding: 1em;
       background: #f9f9f9;
       color: #333;
     }
-    header {
-      background: #4CAF50;
-      color: white;
-      padding: 1rem;
+    h1 {
       text-align: center;
-      font-size: 1.5rem;
-    }
-    main {
-      padding: 1rem;
+      color: #2c3e50;
     }
     #reader {
       width: 100%;
       max-width: 400px;
-      margin: 0 auto;
-      border: 3px solid #4CAF50;
+      margin: 1em auto;
+      border: 2px solid #ccc;
       border-radius: 10px;
       overflow: hidden;
     }
     .info {
       text-align: center;
-      margin-top: 1rem;
-    }
-    .info span {
-      font-weight: bold;
-      font-size: 1.2em;
-    }
-    .cart {
-      margin-top: 1.5rem;
+      margin: 1em 0;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      background: white;
-      border-radius: 10px;
+      background: #fff;
+      border-radius: 8px;
       overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     th, td {
-      padding: 0.7rem;
+      padding: 0.8em;
       border-bottom: 1px solid #eee;
       text-align: center;
     }
-    tr:last-child td {
-      border-bottom: none;
-    }
     th {
-      background: #f0f0f0;
+      background: #3498db;
+      color: #fff;
     }
     button {
-      font-size: 1rem;
-      margin: 0 0.2rem;
-      padding: 0.3rem 0.6rem;
+      background: #3498db;
       border: none;
-      border-radius: 5px;
-      background: #4CAF50;
       color: white;
-      cursor: pointer;
+      padding: 0.3em 0.6em;
+      margin: 0 0.2em;
+      border-radius: 4px;
+      font-size: 1em;
     }
     button:hover {
-      background: #388e3c;
+      background: #2980b9;
     }
-    audio {
-      display: none;
+    td[contenteditable="true"] {
+      background: #f0f8ff;
     }
   </style>
 </head>
 <body>
-  <header>📷 ショピマネ</header>
-  <main>
-    <div id="reader"></div>
-    <div class="info">
-      <p>📦 読み取りコード：<span id="scan-result">---</span></p>
-      <p>💴 合計金額：<strong id="total">0</strong> 円</p>
-    </div>
-    <div class="cart">
-      <table>
-        <thead>
-          <tr>
-            <th>商品名</th><th>価格</th><th>個数</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="cart-body"></tbody>
-      </table>
-    </div>
-    <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
-  </main>
+  <h1>📷 ショピマネ</h1>
+  <div id="reader"></div>
+  <div class="info">
+    <p>読み取りコード：<span id="scan-result">---</span></p>
+    <p>合計金額：<strong id="total">0</strong> 円</p>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>商品</th><th>価格</th><th>個数</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="cart-body"></tbody>
+  </table>
+
+  <!-- 効果音 -->
+  <audio id="beep-sound" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
 
   <script>
     const API_TOKEN = "a34d52dc8c4c76c103bf25faa800cb39";
     const scanResult = document.getElementById("scan-result");
     const cartBody = document.getElementById("cart-body");
     const totalEl = document.getElementById("total");
-    const beepSound = document.getElementById("beep-sound");
 
     const productDB = JSON.parse(localStorage.getItem("productDB") || "{}");
     const cart = {};
@@ -117,13 +97,11 @@
     function updateCart() {
       cartBody.innerHTML = "";
       let total = 0;
-
       for (const code in cart) {
         const qty = cart[code];
         const product = productDB[code] || { name: "未登録", price: 0 };
         const subtotal = product.price * qty;
         total += subtotal;
-
         const row = document.createElement("tr");
         row.innerHTML = `
           <td contenteditable="true" onblur="editName('${code}', this.textContent)">${product.name}</td>
@@ -137,7 +115,6 @@
         `;
         cartBody.appendChild(row);
       }
-
       totalEl.textContent = total;
       localStorage.setItem("productDB", JSON.stringify(productDB));
     }
@@ -173,8 +150,13 @@
       fetch(url)
         .then(res => res.json())
         .then(data => {
-          const nameJP = data?.product?.product_name_ja;
-          const name = nameJP || data?.product?.product_name || "";
+          const product = data?.product || {};
+          const name =
+            product.product_name_ja ||
+            product.product_name ||
+            product.generic_name_ja ||
+            product.generic_name ||
+            "";
           callback(name);
         })
         .catch(() => callback(""));
@@ -185,7 +167,7 @@
       paused = true;
       lastScanned = code;
       scanResult.textContent = code;
-      beepSound.play();
+      document.getElementById("beep-sound").play();
 
       if (productDB[code]) {
         cart[code] = (cart[code] || 0) + 1;
