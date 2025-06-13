@@ -9,7 +9,7 @@
   <style>
     body {
       font-family: 'Roboto', sans-serif;
-      background: linear-gradient(to right, #f0f2f5, #e3e8ec);
+      background-color: #f0e68c;
       padding: 1em;
       margin: 0;
     }
@@ -60,61 +60,59 @@
       text-align: center;
       font-size: 1.1em;
     }
-    #scan-result, #total, #budget-left {
+    #scan-result, #total, #budget, #remaining {
       font-weight: bold;
     }
-    .controls {
+    #controls {
       text-align: center;
-      margin-top: 1em;
+      margin: 1em 0;
     }
   </style>
 </head>
 <body>
   <h1>📷 ショピマネ！！</h1>
   <div id="weather">天気取得中...</div>
-  <div class="controls">
-    <button onclick="startCamera()">カメラ開始</button>
-    <button onclick="stopCamera()">カメラ停止</button>
-    <input type="number" id="budget-input" placeholder="予算を入力" onchange="updateBudget()" style="margin-left:10px; padding:0.3em;">
+  <div id="controls">
+    <label for="cameraSelect">カメラ選択:</label>
+    <select id="cameraSelect"></select>
+    <button onclick="startCamera()">開始</button>
+    <button onclick="stopCamera()">停止</button>
+    <br><br>
+    <label>予算: <input type="number" id="budgetInput" onchange="setBudget()"> 円</label>
+    <p>残り予算：<span id="remaining">---</span> 円</p>
   </div>
-  <p style="text-align:center">残り予算：<span id="budget-left">0</span> 円</p>
   <div id="reader"></div>
   <p>読み取りコード：<span id="scan-result">---</span></p>
   <p>合計金額：<strong id="total">0</strong> 円</p>
-
   <table>
     <thead>
       <tr><th>商品</th><th>価格</th><th>個数</th><th>操作</th></tr>
     </thead>
     <tbody id="cart-body"></tbody>
   </table>
-
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
-
   <script>
     const APP_ID = "1085166348461729249";
+    const cart = {};
+    let html5QrCode;
+    let currentCamId = null;
+    let lastScanned = null;
+    let paused = false;
+    let budget = 0;
+
     const cartBody = document.getElementById("cart-body");
     const totalEl = document.getElementById("total");
     const scanResult = document.getElementById("scan-result");
     const weatherEl = document.getElementById("weather");
-    const budgetInput = document.getElementById("budget-input");
-    const budgetLeftEl = document.getElementById("budget-left");
-
-    let cart = {};
-    let scanning = true;
-    let lastScanned = null;
-    let budget = 0;
-    let html5QrCode;
+    const remainingEl = document.getElementById("remaining");
 
     function updateCart() {
       cartBody.innerHTML = "";
       let total = 0;
-
       for (const code in cart) {
         const item = cart[code];
         const subtotal = item.price * item.qty;
         total += subtotal;
-
         const row = document.createElement("tr");
         row.innerHTML = `
           <td contenteditable onblur="editName('${code}', this.textContent)">${item.name}</td>
@@ -129,7 +127,7 @@
         cartBody.appendChild(row);
       }
       totalEl.textContent = total;
-      budgetLeftEl.textContent = budget - total;
+      remainingEl.textContent = budget - total;
     }
 
     function editName(code, newName) {
@@ -156,11 +154,6 @@
       updateCart();
     }
 
-    function updateBudget() {
-      budget = parseInt(budgetInput.value) || 0;
-      updateCart();
-    }
-
     function fetchRakutenProduct(jan, callback) {
       const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706?applicationId=${APP_ID}&keyword=${jan}`;
       fetch(url)
@@ -168,8 +161,7 @@
         .then(data => {
           const items = data.Items;
           if (items && items.length > 0) {
-            const item = items[0].Item;
-            callback(item.itemName || "商品名不明");
+            callback(items[0].Item.itemName || "商品名不明");
           } else {
             callback(null);
           }
@@ -177,65 +169,40 @@
         .catch(() => callback(null));
     }
 
-    function handleScanSuccess(code) {
-      if (!scanning || code === lastScanned) return;
-      scanning = false;
+    function onScan(code) {
+      if (paused || code === lastScanned) return;
+      paused = true;
       lastScanned = code;
       scanResult.textContent = code;
       document.getElementById("beep-sound").play();
-
       if (cart[code]) {
         cart[code].qty++;
         updateCart();
-        restartScan();
+        resumeScan();
       } else {
         fetchRakutenProduct(code, name => {
           if (!name) name = prompt("商品名を入力してください：") || "不明";
           const price = parseInt(prompt("価格を入力してください："), 10);
           if (isNaN(price)) {
             alert("価格が無効です。スキャンを中止します。");
-            restartScan();
+            resumeScan();
             return;
           }
           cart[code] = { name, price, qty: 1 };
           updateCart();
-          restartScan();
+          resumeScan();
         });
       }
     }
 
-    function restartScan() {
-      setTimeout(() => { scanning = true; }, 1000);
-    }
-
-    function startCamera() {
-      Html5Qrcode.getCameras().then(devices => {
-        if (devices && devices.length) {
-          const backCam = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
-          html5QrCode = new Html5Qrcode("reader");
-          html5QrCode.start(
-            backCam.id,
-            { fps: 10, qrbox: 250 },
-            handleScanSuccess,
-            err => {}
-          ).catch(err => alert("カメラが起動できません"));
-        }
-      });
-    }
-
-    function stopCamera() {
-      if (html5QrCode) {
-        html5QrCode.stop().then(() => {
-          html5QrCode.clear();
-        }).catch(err => console.error("カメラ停止エラー:", err));
-      }
+    function resumeScan() {
+      setTimeout(() => { paused = false; }, 1000);
     }
 
     function showWeather() {
       const apiKey = "54cca6a7e7354f32b07174617251306";
       const city = "Osaka";
       const url = `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${city}&hours=1&lang=ja`;
-
       fetch(url)
         .then(res => res.json())
         .then(data => {
@@ -243,7 +210,6 @@
           const now = new Date();
           const nextHour = (now.getHours() + 1) % 24;
           const nextWeather = hourForecast.find(h => new Date(h.time).getHours() === nextHour);
-
           if (!nextWeather) {
             weatherEl.textContent = "1時間後の天気が取得できません";
             return;
@@ -252,14 +218,43 @@
           const emoji = condition.includes("晴") ? "☀️" : condition.includes("雨") ? "🌧️" : condition.includes("曇") ? "☁️" : "❓";
           weatherEl.textContent = `1時間後の天気（大阪）：${emoji} ${condition}`;
         })
-        .catch(err => {
-          console.error("天気取得エラー:", err);
-          weatherEl.textContent = "天気取得に失敗しました";
-        });
+        .catch(() => weatherEl.textContent = "天気取得に失敗しました");
     }
 
+    function setBudget() {
+      budget = parseInt(document.getElementById("budgetInput").value) || 0;
+      updateCart();
+    }
+
+    function startCamera() {
+      if (!currentCamId) return;
+      if (html5QrCode) html5QrCode.stop().catch(() => {});
+      html5QrCode = new Html5Qrcode("reader");
+      html5QrCode.start(currentCamId, { fps: 10, qrbox: 250 }, onScan);
+    }
+
+    function stopCamera() {
+      if (html5QrCode) html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+    }
+
+    Html5Qrcode.getCameras().then(devices => {
+      const select = document.getElementById("cameraSelect");
+      devices.forEach(device => {
+        const option = document.createElement("option");
+        option.value = device.id;
+        option.text = device.label || `カメラ ${device.id}`;
+        select.appendChild(option);
+      });
+      if (devices.length > 0) {
+        currentCamId = devices[0].id;
+        select.value = currentCamId;
+      }
+      select.onchange = () => {
+        currentCamId = select.value;
+      };
+    });
+
     showWeather();
-    startCamera();
   </script>
 </body>
 </html>
