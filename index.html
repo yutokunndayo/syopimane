@@ -237,22 +237,23 @@
       if (html5QrCode) html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
     }
 
-    Html5Qrcode.getCameras().then(devices => {
-      const select = document.getElementById("cameraSelect");
-      devices.forEach(device => {
-        const option = document.createElement("option");
-        option.value = device.id;
-        option.text = device.label || `カメラ ${device.id}`;
-        select.appendChild(option);
-      });
-      if (devices.length > 0) {
-        currentCamId = devices[0].id;
-        select.value = currentCamId;
-      }
-      select.onchange = () => {
-        currentCamId = select.value;
-      };
-    });
+   Html5Qrcode.getCameras().then(devices => {
+  const select = document.getElementById("cameraSelect");
+  devices.forEach(device => {
+    const option = document.createElement("option");
+    option.value = device.id;
+    option.text = device.label || `カメラ ${device.id}`;
+    select.appendChild(option);
+  });
+  if (devices.length > 0) {
+    currentCamId = devices[0].id;
+    select.value = currentCamId;
+  }
+  select.onchange = () => {
+    currentCamId = select.value;
+  };
+});
+
 
     showWeather();
   </script>
