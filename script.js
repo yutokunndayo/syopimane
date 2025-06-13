@@ -1,85 +1,18 @@
-
-document.addEventListener('DOMContentLoaded', () => {
-    const beepSound = document.getElementById('beep-sound');
-    const productsTableBody = document.querySelector('#products tbody');
-    const totalPriceElement = document.getElementById('total-price');
-    let scannedBarcodes = new Set();
-    let products = JSON.parse(localStorage.getItem('products')) || [];
-
-    function updateTotalPrice() {
-        const totalPrice = products.reduce((sum, product) => sum + product.price * product.quantity, 0);
-        totalPriceElement.textContent = `合計金額: ¥${totalPrice}`;
-    }
-
-    function renderProducts() {
-        productsTableBody.innerHTML = '';
-        products.forEach((product, index) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td contenteditable="true" data-index="${index}" data-field="name">${product.name}</td>
-                <td contenteditable="true" data-index="${index}" data-field="price">${product.price}</td>
-                <td contenteditable="true" data-index="${index}" data-field="quantity">${product.quantity}</td>
-                <td><button data-index="${index}" class="delete-btn">削除</button></td>
-            `;
-            productsTableBody.appendChild(row);
-        });
-        updateTotalPrice();
-    }
-
-    function saveProducts() {
-        localStorage.setItem('products', JSON.stringify(products));
-    }
-
-    productsTableBody.addEventListener('input', (event) => {
-        const target = event.target;
-        const index = target.dataset.index;
-        const field = target.dataset.field;
-        products[index][field] = field === 'price' || field === 'quantity' ? parseFloat(target.textContent) : target.textContent;
-        saveProducts();
-        updateTotalPrice();
-    });
-
-    productsTableBody.addEventListener('click', (event) => {
-        if (event.target.classList.contains('delete-btn')) {
-            const index = event.target.dataset.index;
-            products.splice(index, 1);
-            saveProducts();
-            renderProducts();
-        }
-    });
-
-    function onDetected(result) {
-        const code = result.codeResult.code;
-        if (!scannedBarcodes.has(code)) {
-            scannedBarcodes.add(code);
-            beepSound.play();
-            fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 1) {
-                        const product = {
-                            name: data.product.product_name || '不明な商品',
-                            price: parseFloat(data.product.price || 0),
-                            quantity: 1
-                        };
-                        products.push(product);
-                        saveProducts();
-                        renderProducts();
-                    }
-                });
-            setTimeout(() => scannedBarcodes.delete(code), 5000);
-        }
-    }
-
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize QuaggaJS
     Quagga.init({
         inputStream: {
-            type: 'LiveStream',
-            target: document.querySelector('#scanner')
+            name: "Live",
+            type: "LiveStream",
+            target: document.querySelector('#scanner'), // 映像を表示する要素
+            constraints: {
+                facingMode: "environment" // 背面カメラを使用（スマホ向け）
+            }
         },
         decoder: {
-            readers: ['ean_reader']
+            readers: ["ean_reader"]
         }
-    }, (err) => {
+    }, function(err) {
         if (err) {
             console.error(err);
             return;
@@ -87,21 +20,75 @@ document.addEventListener('DOMContentLoaded', () => {
         Quagga.start();
     });
 
-    Quagga.onDetected(onDetected);
+    // Event listener for barcode detection
+    Quagga.onDetected(function(result) {
+        var code = result.codeResult.code;
+        console.log("Barcode detected: " + code);
 
-    function fetchWeather() {
-        fetch('https://api.open-meteo.com/v1/forecast?latitude=35.69&longitude=139.69&current_weather=true')
-            .then(response => response.json())
-            .then(data => {
-                const weatherElement = document.getElementById('weather');
-                const weather = data.current_weather;
-                weatherElement.innerHTML = `
-                    <p>現在の天気: ${weather.weathercode}</p>
-                    <p>気温: ${weather.temperature}°C</p>
-                `;
-            });
+        // Play beep sound
+        var beepSound = document.getElementById('beep-sound');
+        beepSound.play();
+
+        // Prevent duplicate scans
+        if (!localStorage.getItem(code)) {
+            localStorage.setItem(code, true);
+            // Fetch product information from OpenFoodFacts API
+            fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.product) {
+                        var productName = data.product.product_name;
+                        var productPrice = data.product.price || 0; // Assuming price is available
+                        addProductToList(productName, productPrice);
+                    }
+                });
+        }
+    });
+
+    // Function to add product to the list
+    function addProductToList(name, price) {
+        var tbody = document.querySelector('#products tbody');
+        var row = document.createElement('tr');
+        row.innerHTML = `
+            <td contenteditable="true">${name}</td>
+            <td contenteditable="true">${price}</td>
+            <td contenteditable="true">1</td>
+            <td><button class="delete-btn">削除</button></td>
+        `;
+        tbody.appendChild(row);
+        updateTotalPrice();
     }
 
-    fetchWeather();
-    renderProducts();
+    // Function to update total price
+    function updateTotalPrice() {
+        var total = 0;
+        var rows = document.querySelectorAll('#products tbody tr');
+        rows.forEach(row => {
+            var price = parseFloat(row.cells[1].textContent) || 0;
+            var quantity = parseInt(row.cells[2].textContent) || 1;
+            total += price * quantity;
+        });
+        document.getElementById('total-price').textContent = `合計金額: ¥${total}`;
+    }
+
+    // Event listener for delete button
+    document.addEventListener('click', function(event) {
+        if (event.target.classList.contains('delete-btn')) {
+            var row = event.target.closest('tr');
+            row.remove();
+            updateTotalPrice();
+        }
+    });
+
+    // Fetch weather information from Open-Meteo API
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=35.69&longitude=139.69&current_weather=true')
+        .then(response => response.json())
+        .then(data => {
+            var weather = data.current_weather;
+            var weatherDiv = document.getElementById('weather');
+            weatherDiv.innerHTML = `
+                <p>天気: ${weather.weathercode}</p>
+                <p>気温: ${weather.temperature}°C</p>
+            `;
+        });
 });
