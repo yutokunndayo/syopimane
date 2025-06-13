@@ -60,14 +60,24 @@
       text-align: center;
       font-size: 1.1em;
     }
-    #scan-result, #total {
+    #scan-result, #total, #budget-left {
       font-weight: bold;
+    }
+    .controls {
+      text-align: center;
+      margin-top: 1em;
     }
   </style>
 </head>
 <body>
-  <h1>📷 ショピマネｖ３</h1>
+  <h1>📷 ショピマネ！！</h1>
   <div id="weather">天気取得中...</div>
+  <div class="controls">
+    <button onclick="startCamera()">カメラ開始</button>
+    <button onclick="stopCamera()">カメラ停止</button>
+    <input type="number" id="budget-input" placeholder="予算を入力" onchange="updateBudget()" style="margin-left:10px; padding:0.3em;">
+  </div>
+  <p style="text-align:center">残り予算：<span id="budget-left">0</span> 円</p>
   <div id="reader"></div>
   <p>読み取りコード：<span id="scan-result">---</span></p>
   <p>合計金額：<strong id="total">0</strong> 円</p>
@@ -87,9 +97,14 @@
     const totalEl = document.getElementById("total");
     const scanResult = document.getElementById("scan-result");
     const weatherEl = document.getElementById("weather");
-    const cart = {};
+    const budgetInput = document.getElementById("budget-input");
+    const budgetLeftEl = document.getElementById("budget-left");
+
+    let cart = {};
+    let scanning = true;
     let lastScanned = null;
-    let paused = false;
+    let budget = 0;
+    let html5QrCode;
 
     function updateCart() {
       cartBody.innerHTML = "";
@@ -114,6 +129,7 @@
         cartBody.appendChild(row);
       }
       totalEl.textContent = total;
+      budgetLeftEl.textContent = budget - total;
     }
 
     function editName(code, newName) {
@@ -140,6 +156,11 @@
       updateCart();
     }
 
+    function updateBudget() {
+      budget = parseInt(budgetInput.value) || 0;
+      updateCart();
+    }
+
     function fetchRakutenProduct(jan, callback) {
       const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706?applicationId=${APP_ID}&keyword=${jan}`;
       fetch(url)
@@ -156,9 +177,9 @@
         .catch(() => callback(null));
     }
 
-    function onScan(code) {
-      if (paused || code === lastScanned) return;
-      paused = true;
+    function handleScanSuccess(code) {
+      if (!scanning || code === lastScanned) return;
+      scanning = false;
       lastScanned = code;
       scanResult.textContent = code;
       document.getElementById("beep-sound").play();
@@ -166,25 +187,48 @@
       if (cart[code]) {
         cart[code].qty++;
         updateCart();
-        resumeScan();
+        restartScan();
       } else {
         fetchRakutenProduct(code, name => {
           if (!name) name = prompt("商品名を入力してください：") || "不明";
           const price = parseInt(prompt("価格を入力してください："), 10);
           if (isNaN(price)) {
             alert("価格が無効です。スキャンを中止します。");
-            resumeScan();
+            restartScan();
             return;
           }
           cart[code] = { name, price, qty: 1 };
           updateCart();
-          resumeScan();
+          restartScan();
         });
       }
     }
 
-    function resumeScan() {
-      setTimeout(() => { paused = false; }, 1000);
+    function restartScan() {
+      setTimeout(() => { scanning = true; }, 1000);
+    }
+
+    function startCamera() {
+      Html5Qrcode.getCameras().then(devices => {
+        if (devices && devices.length) {
+          const backCam = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
+          html5QrCode = new Html5Qrcode("reader");
+          html5QrCode.start(
+            backCam.id,
+            { fps: 10, qrbox: 250 },
+            handleScanSuccess,
+            err => {}
+          ).catch(err => alert("カメラが起動できません"));
+        }
+      });
+    }
+
+    function stopCamera() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+          html5QrCode.clear();
+        }).catch(err => console.error("カメラ停止エラー:", err));
+      }
     }
 
     function showWeather() {
@@ -215,19 +259,7 @@
     }
 
     showWeather();
-
-    Html5Qrcode.getCameras().then(devices => {
-      if (devices && devices.length) {
-        const backCam = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
-        const html5QrCode = new Html5Qrcode("reader");
-        html5QrCode.start(
-          backCam.id,
-          { fps: 10, qrbox: 250 },
-          onScan,
-          err => {}
-        ).catch(err => alert("カメラが起動できません"));
-      }
-    });
+    startCamera();
   </script>
 </body>
 </html>
