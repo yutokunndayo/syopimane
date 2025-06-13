@@ -1,155 +1,208 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>バーコードスキャナー</title>
+  <meta charset="UTF-8">
+  <title>ショピマネ🛒</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
-    body { font-family: sans-serif; padding: 1em; max-width: 600px; margin: auto; background: #f2f2f2; }
-    header { text-align: center; }
-    #scanner-container { margin: 1em 0; text-align: center; }
-    #weather { margin: 1em 0; font-weight: bold; }
-    table { width: 100%; border-collapse: collapse; background: white; }
-    th, td { padding: 0.5em; border: 1px solid #ccc; text-align: center; }
-    #total-price { margin-top: 1em; font-size: 1.2em; font-weight: bold; }
-    video { width: 100%; max-height: 300px; }
+    body {
+      font-family: sans-serif;
+      padding: 1em;
+      background: #f9f9f9;
+    }
+    #reader {
+      width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1em;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.5em;
+      text-align: center;
+      background: white;
+    }
+    button {
+      padding: 0.3em 0.5em;
+    }
+    #weather {
+      font-weight: bold;
+      margin-bottom: 1em;
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>バーコードスキャナー</h1>
-    <div id="weather">天気を取得中...</div>
-  </header>
+  <h1>📷 ショピマネ</h1>
+  <div id="weather">天気取得中...</div>
+  <div id="reader"></div>
+  <p>読み取りコード：<span id="scan-result">---</span></p>
+  <p>合計金額：<strong id="total">0</strong> 円</p>
 
-  <main>
-    <div id="scanner-container">
-      <video id="scanner"></video>
-    </div>
-
-    <div id="product-list">
-      <h2>商品リスト</h2>
-      <table id="products">
-        <thead>
-          <tr>
-            <th>商品名</th>
-            <th>価格</th>
-            <th>個数</th>
-          </tr>
-        </thead>
-        <tbody id="product-body"></tbody>
-      </table>
-      <div id="total-price">合計金額: ¥0</div>
-    </div>
-  </main>
+  <table>
+    <thead>
+      <tr>
+        <th>商品</th><th>価格</th><th>個数</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="cart-body"></tbody>
+  </table>
 
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
 
   <script>
-    const RAKUTEN_APPID = "1085166348461729249"; // ← ここをあなたのIDに変更！
+    const APP_ID = "1085166348461729249";
+    const cartBody = document.getElementById("cart-body");
+    const totalEl = document.getElementById("total");
+    const scanResult = document.getElementById("scan-result");
+    const weatherEl = document.getElementById("weather");
 
-    const productBody = document.getElementById("product-body");
-    const totalPriceEl = document.getElementById("total-price");
-    const beep = document.getElementById("beep-sound");
     const cart = {};
-    let lastCode = null;
+    let lastScanned = null;
+    let paused = false;
 
-    function updateTable() {
-      productBody.innerHTML = '';
+    function updateCart() {
+      cartBody.innerHTML = "";
       let total = 0;
+
       for (const code in cart) {
         const item = cart[code];
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${item.name}</td><td>¥${item.price}</td><td>${item.qty}</td>`;
-        productBody.appendChild(tr);
-        total += item.price * item.qty;
+        const subtotal = item.price * item.qty;
+        total += subtotal;
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td contenteditable onblur="editName('${code}', this.textContent)">${item.name}</td>
+          <td contenteditable onblur="editPrice('${code}', this.textContent)">${item.price}</td>
+          <td>${item.qty}</td>
+          <td>
+            <button onclick="changeQty('${code}', -1)">−</button>
+            <button onclick="changeQty('${code}', 1)">＋</button>
+            <button onclick="removeItem('${code}')">🗑️</button>
+          </td>
+        `;
+        cartBody.appendChild(row);
       }
-      totalPriceEl.textContent = `合計金額: ¥${total}`;
+
+      totalEl.textContent = total;
     }
 
-    function fetchProduct(code) {
-      fetch(`https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706?format=json&applicationId=${RAKUTEN_APPID}&jan=${code}&hits=1`)
+    function editName(code, newName) {
+      cart[code].name = newName;
+      updateCart();
+    }
+
+    function editPrice(code, newPrice) {
+      const price = parseInt(newPrice);
+      if (!isNaN(price)) {
+        cart[code].price = price;
+        updateCart();
+      }
+    }
+
+    function changeQty(code, delta) {
+      cart[code].qty += delta;
+      if (cart[code].qty <= 0) delete cart[code];
+      updateCart();
+    }
+
+    function removeItem(code) {
+      delete cart[code];
+      updateCart();
+    }
+
+    function fetchRakutenProduct(jan, callback) {
+      const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706?applicationId=${APP_ID}&keyword=${jan}`;
+      fetch(url)
         .then(res => res.json())
         .then(data => {
-          const item = data.Items?.[0]?.Item;
-          const name = item?.itemName || "不明";
-          const price = parseInt(item?.itemPrice || prompt("価格を入力してください"), 10);
-          if (!cart[code]) {
-            cart[code] = { name, price, qty: 1 };
+          const items = data.Items;
+          if (items && items.length > 0) {
+            const item = items[0].Item;
+            callback(item.itemName || "商品名不明");
           } else {
-            cart[code].qty++;
+            callback(null);
           }
-          beep.play();
-          updateTable();
         })
-        .catch(err => {
-          alert("商品取得に失敗しました");
-          console.error(err);
-        });
+        .catch(() => callback(null));
     }
 
-    function startScanner() {
-      Quagga.init({
-        inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: document.querySelector('#scanner'),
-          constraints: {
-            facingMode: "environment"
+    function onScan(code) {
+      if (paused || code === lastScanned) return;
+      paused = true;
+      lastScanned = code;
+      scanResult.textContent = code;
+      document.getElementById("beep-sound").play();
+
+      if (cart[code]) {
+        cart[code].qty++;
+        updateCart();
+        resumeScan();
+      } else {
+        fetchRakutenProduct(code, name => {
+          if (!name) {
+            name = prompt("商品名を入力してください：") || "不明";
           }
-        },
-        decoder: {
-          readers: ["ean_reader", "ean_13_reader"]
-        }
-      }, err => {
-        if (err) {
-          console.error(err);
-          return;
-        }
-        Quagga.start();
-      });
-
-      Quagga.onDetected(result => {
-        const code = result.codeResult.code;
-        if (code && code !== lastCode) {
-          lastCode = code;
-          fetchProduct(code);
-          setTimeout(() => { lastCode = null }, 2000); // 2秒間再スキャン防止
-        }
-      });
+          const price = parseInt(prompt("価格を入力してください："), 10);
+          if (isNaN(price)) {
+            alert("価格が無効です。スキャンを中止します。");
+            resumeScan();
+            return;
+          }
+          cart[code] = { name, price, qty: 1 };
+          updateCart();
+          resumeScan();
+        });
+      }
     }
 
-    function getWeatherText(code) {
-      const map = {
-        0: "快晴", 1: "晴れ", 2: "やや曇り", 3: "曇り",
-        45: "霧", 48: "霧", 51: "霧雨", 53: "霧雨", 55: "霧雨",
-        61: "弱い雨", 63: "雨", 65: "強い雨",
-        66: "氷雨", 67: "氷雨", 71: "弱い雪", 73: "雪", 75: "強い雪",
-        80: "にわか雨", 81: "雨", 82: "激しい雨", 95: "雷雨", 99: "雷雨"
-      };
-      return map[code] || "不明";
+    function resumeScan() {
+      setTimeout(() => {
+        paused = false;
+        lastScanned = null;
+      }, 2000);
     }
 
-    function getWeather() {
-      navigator.geolocation?.getCurrentPosition(pos => {
+    function showWeather() {
+      navigator.geolocation.getCurrentPosition(pos => {
         const { latitude, longitude } = pos.coords;
-        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&timezone=Asia/Tokyo`)
+        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=weather`)
           .then(res => res.json())
           .then(data => {
-            const weather = data.current_weather;
-            const text = getWeatherText(weather.weathercode);
-            document.getElementById("weather").textContent = `現在の天気：${text}（${weather.temperature}℃）`;
-          })
-          .catch(() => {
-            document.getElementById("weather").textContent = "天気取得失敗";
+            const code = data.current.weather.code;
+            let condition = "不明";
+            if (code >= 0 && code < 3) condition = "☀️ 晴れ";
+            else if (code < 61) condition = "☁️ 曇り";
+            else condition = "🌧️ 雨";
+            weatherEl.textContent = `現在の天気：${condition}`;
+          }).catch(() => {
+            weatherEl.textContent = "天気取得失敗";
           });
       }, () => {
-        document.getElementById("weather").textContent = "位置情報が取得できません";
+        weatherEl.textContent = "位置情報が取得できません";
       });
     }
 
-    getWeather();
-    startScanner();
+    showWeather();
+
+    const html5QrCode = new Html5Qrcode("reader");
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length) {
+        const backCam = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
+        html5QrCode.start(
+          backCam.id,
+          { fps: 10, qrbox: 250 },
+          onScan,
+          err => {}
+        ).catch(err => {
+          alert("カメラが起動できません");
+        });
+      }
+    });
   </script>
 </body>
 </html>
