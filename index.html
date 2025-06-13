@@ -37,7 +37,7 @@
   </style>
 </head>
 <body>
-  <h1>📷 ショピマネ</h1>
+  <h1>📷 ショピマネ！！</h1>
   <div id="weather">天気取得中...</div>
   <div id="reader"></div>
   <p>読み取りコード：<span id="scan-result">---</span></p>
@@ -160,49 +160,47 @@
       }
     }
 
-    function resumeScan() {
-      setTimeout(() => {
-        paused = false;
-        lastScanned = null;
-      }, 2000);
-    }
-
-  function showWeather() {
-  const latitude = 34.6937;   // 大阪市の緯度
-  const longitude = 135.5023; // 大阪市の経度
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=weathercode&timezone=auto`;
+function showWeather() {
+  const latitude = 34.6937;   // 大阪の緯度
+  const longitude = 135.5023; // 大阪の経度
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=weathercode&timezone=Asia%2FTokyo`;
 
   fetch(url)
     .then(res => res.json())
     .then(data => {
       const now = new Date();
       now.setHours(now.getHours() + 1);
-      const targetTime = now.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+      now.setMinutes(0, 0, 0); // ちょうど1時間後の00分に調整
 
-      const index = data.hourly.time.findIndex(t => t.startsWith(targetTime));
+      const targetTime = now.toISOString().slice(0, 13) + ":00"; // "YYYY-MM-DDTHH:00"
+
+      const index = data.hourly.time.findIndex(t => t === targetTime);
       if (index === -1) {
-        weatherEl.textContent = "天気データが見つかりません";
+        weatherEl.textContent = "⛅ 天気データが見つかりません";
         return;
       }
 
       const code = data.hourly.weathercode[index];
-      let condition = "不明";
+      let condition = "❓ 不明";
 
-      if ([0, 1, 2].includes(code)) {
+      if ([0, 1].includes(code)) {
         condition = "☀️ 晴れ";
-      } else if ([3, 45, 48].includes(code)) {
+      } else if ([2, 3, 45, 48].includes(code)) {
         condition = "☁️ 曇り";
-      } else if ((code >= 51 && code <= 67) || code >= 80) {
+      } else if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
         condition = "🌧️ 雨";
+      } else if (code >= 71 && code <= 77) {
+        condition = "❄️ 雪";
       }
 
       weatherEl.textContent = `大阪の1時間後の天気：${condition}`;
     })
     .catch(err => {
       console.error("天気取得エラー:", err);
-      weatherEl.textContent = "天気取得に失敗しました";
+      weatherEl.textContent = "🌐 天気取得に失敗しました";
     });
 }
+
 
 
     showWeather();
