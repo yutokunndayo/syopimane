@@ -31,11 +31,13 @@ main {
     width: 100%;
     margin-bottom: 20px;
 }
-
 #scanner {
     width: 100%;
     height: auto;
+    display: block; /* 映像が表示されるように */
+    border: 2px solid #ccc;
 }
+
 
 #product-list {
     width: 100%;
@@ -57,3 +59,11 @@ th, td {
     font-size: 1.2em;
     text-align: right;
 }
+#scanner-container {
+    width: 100%;
+    max-width: 600px;
+    margin: 20px auto;
+    background-color: #000; /* 背景を黒にして映像が見やすく */
+}
+
+
