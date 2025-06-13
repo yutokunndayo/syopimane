@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>ショピマネ🛒</title>
+  <title>JANスキャナ & 天気</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
@@ -40,7 +40,7 @@
   </style>
 </head>
 <body>
-  <h1>📷 ショピマネ</h1>
+  <h1>📷 JANスキャナ</h1>
   <div id="weather">天気取得中...</div>
   <div id="reader"></div>
   <p>読み取りコード：<span id="scan-result">---</span></p>
@@ -58,6 +58,7 @@
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
 
   <script>
+    const apiKey = "a34d52dc8c4c76c103bf25faa800cb39"; // JANAPIキー
     const scanResult = document.getElementById("scan-result");
     const cartBody = document.getElementById("cart-body");
     const totalEl = document.getElementById("total");
@@ -117,20 +118,19 @@
       }
     }
 
-    function fetchProduct(code, callback) {
-      fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`)
+    function fetchProductFromJANAPI(code, callback) {
+      fetch(`https://janapi.jp/api/code/${code}?apikey=${apiKey}`)
         .then(res => res.json())
         .then(data => {
-          const name =
-            data.product?.product_name_ja ||
-            data.product?.product_name_jp ||
-            data.product?.product_name ||
-            data.product?.generic_name_ja ||
-            data.product?.generic_name ||
-            "";
-          callback(name);
+          if (data.result && data.code) {
+            const name = data.name || "";
+            const price = parseInt(data.price) || null;
+            callback({ name, price });
+          } else {
+            callback({});
+          }
         })
-        .catch(() => callback(""));
+        .catch(() => callback({}));
     }
 
     function onScan(code) {
@@ -145,9 +145,9 @@
         updateCart();
         resumeScan();
       } else {
-        fetchProduct(code, name => {
+        fetchProductFromJANAPI(code, ({ name, price }) => {
           const inputName = name || prompt("商品名を入力：") || "不明";
-          const inputPrice = parseInt(prompt("価格を入力："), 10);
+          const inputPrice = price || parseInt(prompt("価格を入力："), 10);
           if (isNaN(inputPrice)) {
             alert("価格が無効です");
             resumeScan();
@@ -183,7 +183,7 @@
       }
     });
 
-    // 🌤 天気を取得
+    // 🌦 天気を取得
     navigator.geolocation.getCurrentPosition(pos => {
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
