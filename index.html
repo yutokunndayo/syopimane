@@ -2,155 +2,146 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>JAN スキャナ</title>
+  <title>ショピマネ🛒</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     body {
       font-family: sans-serif;
-      max-width: 600px;
-      margin: auto;
       padding: 1em;
-      background: #f8f9fa;
-    }
-    h1 {
-      text-align: center;
     }
     #reader {
-      margin: 1em auto;
+      width: 100%;
       max-width: 400px;
+      margin: 0 auto;
     }
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 1em;
-      background: #fff;
     }
     th, td {
       border: 1px solid #ccc;
       padding: 0.5em;
       text-align: center;
     }
-    td[contenteditable] {
-      background: #eef;
-    }
     button {
-      padding: 0.3em 0.6em;
-      margin: 0 0.2em;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-    }
-    #weather {
-      text-align: center;
-      margin-top: 0.5em;
-      font-size: 0.9em;
+      padding: 0.3em 0.5em;
     }
   </style>
 </head>
 <body>
-  <h1>📷 JANスキャナ</h1>
-  <div id="weather">天気取得中…</div>
+  <h1>📷 ショピマネ</h1>
   <div id="reader"></div>
+  <p>読み取りコード：<span id="scan-result">---</span></p>
   <p>合計金額：<strong id="total">0</strong> 円</p>
 
   <table>
     <thead>
-      <tr><th>商品名</th><th>価格</th><th>個数</th><th>操作</th></tr>
+      <tr>
+        <th>商品</th><th>価格</th><th>個数</th><th>操作</th>
+      </tr>
     </thead>
     <tbody id="cart-body"></tbody>
   </table>
 
+  <!-- 効果音 -->
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
 
   <script>
-    // 🧩 ユーザーのJANAPIキーをここに入れてください
-    const JANAPI_KEY = "a34d52dc8c4c76c103bf25faa800cb39";
+    const API_TOKEN = "a34d52dc8c4c76c103bf25faa800cb39";
 
+    const scanResult = document.getElementById("scan-result");
     const cartBody = document.getElementById("cart-body");
     const totalEl = document.getElementById("total");
-    const beep = document.getElementById("beep-sound");
 
     const productDB = JSON.parse(localStorage.getItem("productDB") || "{}");
     const cart = {};
+
     let lastScanned = null;
     let paused = false;
 
     function updateCart() {
       cartBody.innerHTML = "";
       let total = 0;
-      for (let code in cart) {
+
+      for (const code in cart) {
         const qty = cart[code];
-        const prod = productDB[code] || { name: "未登録", price: 0 };
-        total += prod.price * qty;
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td contenteditable onblur="editName('${code}', this.textContent)">${prod.name}</td>
-          <td contenteditable onblur="editPrice('${code}', this.textContent)">${prod.price}</td>
+        const product = productDB[code] || { name: "未登録", price: 0 };
+        const subtotal = product.price * qty;
+        total += subtotal;
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td contenteditable="true" onblur="editName('${code}', this.textContent)">${product.name}</td>
+          <td contenteditable="true" onblur="editPrice('${code}', this.textContent)">${product.price}</td>
           <td>${qty}</td>
           <td>
             <button onclick="changeQty('${code}', -1)">−</button>
             <button onclick="changeQty('${code}', 1)">＋</button>
             <button onclick="removeItem('${code}')">🗑️</button>
-          </td>`;
-        cartBody.appendChild(tr);
+          </td>
+        `;
+        cartBody.appendChild(row);
       }
+
       totalEl.textContent = total;
       localStorage.setItem("productDB", JSON.stringify(productDB));
     }
 
-    function changeQty(code, d) {
-      cart[code] = (cart[code] || 0) + d;
+    function changeQty(code, delta) {
+      cart[code] = (cart[code] || 0) + delta;
       if (cart[code] <= 0) delete cart[code];
       updateCart();
     }
+
     function removeItem(code) {
       delete cart[code];
       updateCart();
     }
-    function editName(code, name) {
-      if (productDB[code]) productDB[code].name = name;
-      updateCart();
-    }
-    function editPrice(code, priceStr) {
-      const p = parseInt(priceStr, 10);
-      if (!isNaN(p) && productDB[code]) productDB[code].price = p;
-      updateCart();
+
+    function editName(code, newName) {
+      if (productDB[code]) {
+        productDB[code].name = newName;
+        updateCart();
+      }
     }
 
-    // JANAPI を使って商品名と価格取得
-    function fetchJanApi(code, callback) {
-      fetch(`https://www.jan-code.net/api/jan/${code}?apikey=${JANAPI_KEY}`)
-        .then(r => r.json())
+    function editPrice(code, newPrice) {
+      const price = parseInt(newPrice, 10);
+      if (!isNaN(price) && productDB[code]) {
+        productDB[code].price = price;
+        updateCart();
+      }
+    }
+
+    function fetchProduct(code, callback) {
+      const url = `https://world.openfoodfacts.org/api/v0/product/${code}.json?user_token=${API_TOKEN}`;
+      fetch(url)
+        .then(res => res.json())
         .then(data => {
-          const name = data.name || "";
-          const price = parseInt(data.price, 10) || null;
-          callback({ name, price });
+          const name = data?.product?.product_name || "";
+          callback(name, 0);
         })
-        .catch(() => callback({}));
+        .catch(() => callback("", 0));
     }
 
     function onScan(code) {
       if (paused || code === lastScanned) return;
       paused = true;
       lastScanned = code;
-      beep.play();
+      scanResult.textContent = code;
+      document.getElementById("beep-sound").play();
 
       if (productDB[code]) {
         cart[code] = (cart[code] || 0) + 1;
         updateCart();
         resumeScan();
       } else {
-        fetchJanApi(code, result => {
-          const name = result.name || prompt("商品名を入力してください：") || "不明";
-          const price = result.price || parseInt(prompt("価格を入力してください："), 10);
-          if (isNaN(price)) {
-            alert("価格エラー。スキャンを無視します。");
-            resumeScan();
-            return;
-          }
-          productDB[code] = { name, price };
+        fetchProduct(code, (name, price) => {
+          const inputName = name || prompt("商品名を入力してください：") || "不明";
+          const inputPrice = parseInt(prompt("価格を入力してください："), 10) || 0;
+          productDB[code] = { name: inputName, price: inputPrice };
           cart[code] = 1;
           updateCart();
           resumeScan();
@@ -162,32 +153,25 @@
       setTimeout(() => {
         paused = false;
         lastScanned = null;
-      }, 1500);
+      }, 2000);
     }
 
-    // カメラ起動
-    Html5Qrcode.getCameras().then(dev => {
-      if (!dev || !dev.length) return alert("カメラが見つかりません。");
-      const cam = dev.find(d => d.label.match(/back/i)) || dev[0];
-      new Html5Qrcode("reader").start(cam.id, { fps: 10, qrbox: 250 }, onScan);
+    const html5QrCode = new Html5Qrcode("reader");
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length) {
+        const cam = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
+        html5QrCode.start(
+          cam.id,
+          { fps: 10, qrbox: 250 },
+          onScan,
+          err => {}
+        ).catch(err => {
+          console.error("カメラ起動失敗:", err);
+        });
+      } else {
+        alert("カメラが見つかりません");
+      }
     });
-
-    // 天気表示（Open-Meteo）
-    if (navigator.geolocation) {
-      const weatherDiv = document.getElementById("weather");
-      navigator.geolocation.getCurrentPosition(pos => {
-        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${pos.coords.latitude}&longitude=${pos.coords.longitude}&current_weather=true&timezone=auto`)
-          .then(r => r.json())
-          .then(d => {
-            const w = d.current_weather;
-            weatherDiv.textContent = `現在の天気：${w.temperature}℃ / 天気コード${w.weathercode}`;
-          })
-          .catch(() => weatherDiv.textContent = "天気取得失敗");
-      }, () => {
-        document.getElementById("weather").textContent = "位置情報を許可してください";
-      });
-    }
-
   </script>
 </body>
 </html>
