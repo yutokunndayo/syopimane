@@ -9,7 +9,7 @@
     body {font-family:sans-serif; max-width:600px; margin:auto; padding:1em; background:#f8f9fa;}
     h1 {text-align:center;}
     #reader {margin:1em auto; max-width:400px;}
-    #weather {text-align:center; margin-bottom:1em;}
+    #weather {text-align:center; margin-bottom:1em; font-weight: bold;}
     table {width:100%; border-collapse:collapse; margin-top:1em; background:white;}
     th, td {border:1px solid #ccc; padding:0.5em; text-align:center;}
     td[contenteditable] {background:#eef;}
@@ -30,14 +30,11 @@
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
 
   <script>
-    // ⚙️ 楽天API情報
     const RAKUTEN_APPID = "1085166348461729249";
-
     const cartBody = document.getElementById("cart-body");
     const totalEl = document.getElementById("total");
     const beep = document.getElementById("beep-sound");
 
-    const productDB = JSON.parse(localStorage.getItem("productDB") || "{}");
     const cart = {};
     let lastScanned = null;
     let paused = false;
@@ -46,14 +43,13 @@
       cartBody.innerHTML = "";
       let total = 0;
       for (const code in cart) {
-        const qty = cart[code];
-        const p = productDB[code] || { name: "未登録", price: 0 };
-        total += p.price * qty;
+        const item = cart[code];
+        total += item.price * item.qty;
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td contenteditable onblur="editName('${code}', this.textContent)">${p.name}</td>
-          <td contenteditable onblur="editPrice('${code}', this.textContent)">${p.price}</td>
-          <td>${qty}</td>
+          <td contenteditable onblur="editName('${code}', this.textContent)">${item.name}</td>
+          <td contenteditable onblur="editPrice('${code}', this.textContent)">${item.price}</td>
+          <td>${item.qty}</td>
           <td>
             <button onclick="changeQty('${code}', -1)">−</button>
             <button onclick="changeQty('${code}', 1)">＋</button>
@@ -63,34 +59,44 @@
         cartBody.appendChild(tr);
       }
       totalEl.textContent = total;
-      localStorage.setItem("productDB", JSON.stringify(productDB));
     }
 
-    function changeQty(c, d) {
-      cart[c] = (cart[c] || 0) + d;
-      if (cart[c] <= 0) delete cart[c];
-      updateCart();
-    }
-    function removeItem(c) {
-      delete cart[c];
-      updateCart();
-    }
-    function editName(c, n) { if (productDB[c]) productDB[c].name = n; updateCart(); }
-    function editPrice(c, v) {
-      const nv = parseInt(v,10);
-      if (!isNaN(nv) && productDB[c]) productDB[c].price = nv;
+    function changeQty(code, delta) {
+      cart[code].qty += delta;
+      if (cart[code].qty <= 0) delete cart[code];
       updateCart();
     }
 
-    function fetchRakuten(code, cb) {
+    function removeItem(code) {
+      delete cart[code];
+      updateCart();
+    }
+
+    function editName(code, newName) {
+      cart[code].name = newName;
+      updateCart();
+    }
+
+    function editPrice(code, newPrice) {
+      const price = parseInt(newPrice, 10);
+      if (!isNaN(price)) {
+        cart[code].price = price;
+        updateCart();
+      }
+    }
+
+    function fetchRakuten(code, callback) {
       fetch(`https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706?format=json&applicationId=${RAKUTEN_APPID}&hits=1&jan=${code}`)
         .then(r => r.json())
         .then(d => {
           const item = d.Items?.[0]?.Item;
-          if (item) cb({ name: item.itemName, price: parseInt(item.itemPrice,10) });
-          else cb({});
+          if (item) {
+            callback({ name: item.itemName, price: parseInt(item.itemPrice, 10) });
+          } else {
+            callback({});
+          }
         })
-        .catch(() => cb({}));
+        .catch(() => callback({}));
     }
 
     function onScan(code) {
@@ -99,42 +105,64 @@
       lastScanned = code;
       beep.play();
 
-      if (productDB[code]) {
-        cart[code] = (cart[code]||0) + 1;
+      fetchRakuten(code, data => {
+        const name = data.name || prompt("商品名を入力してください：") || "不明";
+        const price = data.price || parseInt(prompt("価格を入力してください："), 10);
+        if (isNaN(price)) {
+          alert("価格が無効です");
+          resume();
+          return;
+        }
+        cart[code] = { name, price, qty: 1 };
         updateCart();
         resume();
-      } else {
-        fetchRakuten(code, data => {
-          const name = data.name || prompt("商品名を入力してください：") || "不明";
-          const price = data.price || parseInt(prompt("価格を入力してください："),10);
-          if (isNaN(price)) { alert("価格エラー"); resume(); return; }
-          productDB[code] = { name, price };
-          cart[code] = 1;
-          updateCart();
-          resume();
-        });
-      }
+      });
     }
 
-    function resume() { setTimeout(()=>{ paused=false; lastScanned=null; }, 1500); }
+    function resume() {
+      setTimeout(() => {
+        paused = false;
+        lastScanned = null;
+      }, 1500);
+    }
 
-    Html5Qrcode.getCameras().then(devs => {
-      if (devs && devs.length) {
-        const cam = devs.find(d=>/back/i.test(d.label))||devs[0];
-        new Html5Qrcode("reader").start(cam.id, { fps:10, qrbox:250 }, onScan);
-      } else alert("カメラ未検出");
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length) {
+        const cam = devices.find(d => /back/i.test(d.label)) || devices[0];
+        new Html5Qrcode("reader").start(cam.id, { fps: 10, qrbox: 250 }, onScan);
+      } else {
+        alert("カメラが見つかりません");
+      }
     });
 
-    // 🌦 天気表示（Open-Meteo）
-    navigator.geolocation?.getCurrentPosition(p => {
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.coords.latitude}&longitude=${p.coords.longitude}&current_weather=true&timezone=auto`)
-        .then(r=>r.json())
-        .then(d=>{
+    // 天気コード → 日本語に変換
+    function getWeatherText(code) {
+      const map = {
+        0: "快晴", 1: "晴れ", 2: "やや曇り", 3: "曇り",
+        45: "霧", 48: "霧", 51: "霧雨", 53: "霧雨", 55: "霧雨",
+        61: "弱い雨", 63: "雨", 65: "強い雨",
+        66: "氷雨", 67: "氷雨", 71: "弱い雪", 73: "雪", 75: "強い雪",
+        80: "にわか雨", 81: "雨", 82: "激しい雨", 95: "雷雨", 99: "雷雨"
+      };
+      return map[code] || "不明";
+    }
+
+    // 天気取得
+    navigator.geolocation?.getCurrentPosition(pos => {
+      const { latitude, longitude } = pos.coords;
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&timezone=auto`)
+        .then(r => r.json())
+        .then(d => {
           const w = d.current_weather;
-          document.getElementById("weather").textContent =
-            `現在の天気：${w.temperature}℃、${w.weathercode}`;
-        }).catch(()=>document.getElementById("weather").textContent="天気取得失敗");
-    }, () => { document.getElementById("weather").textContent="位置情報を許可してください"; });
+          const text = getWeatherText(w.weathercode);
+          document.getElementById("weather").textContent = `現在の天気：${text}（${w.temperature}℃）`;
+        })
+        .catch(() => {
+          document.getElementById("weather").textContent = "天気取得失敗";
+        });
+    }, () => {
+      document.getElementById("weather").textContent = "位置情報が取得できませんでした";
+    });
   </script>
 </body>
 </html>
