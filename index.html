@@ -2,42 +2,71 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ショピマネvre7</title>
+  <title>ショピマネv7</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
   <style>
     body {
-      font-family: sans-serif;
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(to right, #f0f2f5, #e3e8ec);
       padding: 1em;
-      background: #f9f9f9;
+      margin: 0;
+    }
+    h1 {
+      text-align: center;
+      color: #2c3e50;
     }
     #reader {
       width: 100%;
       max-width: 400px;
-      margin: 0 auto;
+      margin: 1em auto;
+      border: 2px solid #ccc;
+      border-radius: 12px;
+      overflow: hidden;
     }
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 1em;
+      background: white;
+      border-radius: 10px;
+      overflow: hidden;
     }
     th, td {
-      border: 1px solid #ccc;
-      padding: 0.5em;
+      border: 1px solid #ddd;
+      padding: 0.7em;
       text-align: center;
-      background: white;
+    }
+    th {
+      background-color: #3498db;
+      color: white;
     }
     button {
-      padding: 0.3em 0.5em;
+      padding: 0.3em 0.7em;
+      margin: 0 0.2em;
+      border: none;
+      border-radius: 5px;
+      background: #3498db;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #2980b9;
     }
     #weather {
       font-weight: bold;
       margin-bottom: 1em;
+      text-align: center;
+      font-size: 1.1em;
+    }
+    #scan-result, #total {
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <h1>📷 ショピマネ！！</h1>
+  <h1>📷 ショピマネｖ３</h1>
   <div id="weather">天気取得中...</div>
   <div id="reader"></div>
   <p>読み取りコード：<span id="scan-result">---</span></p>
@@ -45,9 +74,7 @@
 
   <table>
     <thead>
-      <tr>
-        <th>商品</th><th>価格</th><th>個数</th><th>操作</th>
-      </tr>
+      <tr><th>商品</th><th>価格</th><th>個数</th><th>操作</th></tr>
     </thead>
     <tbody id="cart-body"></tbody>
   </table>
@@ -60,7 +87,6 @@
     const totalEl = document.getElementById("total");
     const scanResult = document.getElementById("scan-result");
     const weatherEl = document.getElementById("weather");
-
     const cart = {};
     let lastScanned = null;
     let paused = false;
@@ -87,7 +113,6 @@
         `;
         cartBody.appendChild(row);
       }
-
       totalEl.textContent = total;
     }
 
@@ -144,9 +169,7 @@
         resumeScan();
       } else {
         fetchRakutenProduct(code, name => {
-          if (!name) {
-            name = prompt("商品名を入力してください：") || "不明";
-          }
+          if (!name) name = prompt("商品名を入力してください：") || "不明";
           const price = parseInt(prompt("価格を入力してください："), 10);
           if (isNaN(price)) {
             alert("価格が無効です。スキャンを中止します。");
@@ -160,60 +183,49 @@
       }
     }
 
-function showWeather() {
-  const weatherEl = document.getElementById("weather");
-  const apiKey = "54cca6a7e7354f32b07174617251306"; // WeatherAPIキー
-  const city = "Osaka";
-  const url = `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${city}&hours=1&lang=ja`;
+    function resumeScan() {
+      setTimeout(() => { paused = false; }, 1000);
+    }
 
-  fetch(url)
-    .then(res => res.json())
-    .then(data => {
-      if (!data || !data.forecast) {
-        weatherEl.textContent = "天気データが見つかりません";
-        return;
-      }
+    function showWeather() {
+      const apiKey = "54cca6a7e7354f32b07174617251306";
+      const city = "Osaka";
+      const url = `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${city}&hours=1&lang=ja`;
 
-      const hourForecast = data.forecast.forecastday[0].hour;
-      const now = new Date();
-      const nextHour = (now.getHours() + 1) % 24;
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          const hourForecast = data.forecast.forecastday[0].hour;
+          const now = new Date();
+          const nextHour = (now.getHours() + 1) % 24;
+          const nextWeather = hourForecast.find(h => new Date(h.time).getHours() === nextHour);
 
-      const nextWeather = hourForecast.find(h => new Date(h.time).getHours() === nextHour);
-
-      if (!nextWeather) {
-        weatherEl.textContent = "1時間後の天気が取得できませんでした";
-        return;
-      }
-
-      const condition = nextWeather.condition.text;
-      const emoji = condition.includes("晴") ? "☀️"
-                    : condition.includes("雨") ? "🌧️"
-                    : condition.includes("曇") ? "☁️"
-                    : "❓";
-
-      weatherEl.textContent = `1時間後の天気（大阪）：${emoji} ${condition}`;
-    })
-    .catch(err => {
-      console.error("天気取得エラー:", err);
-      weatherEl.textContent = "天気の取得に失敗しました";
-    });
-}
-
+          if (!nextWeather) {
+            weatherEl.textContent = "1時間後の天気が取得できません";
+            return;
+          }
+          const condition = nextWeather.condition.text;
+          const emoji = condition.includes("晴") ? "☀️" : condition.includes("雨") ? "🌧️" : condition.includes("曇") ? "☁️" : "❓";
+          weatherEl.textContent = `1時間後の天気（大阪）：${emoji} ${condition}`;
+        })
+        .catch(err => {
+          console.error("天気取得エラー:", err);
+          weatherEl.textContent = "天気取得に失敗しました";
+        });
+    }
 
     showWeather();
 
-    const html5QrCode = new Html5Qrcode("reader");
     Html5Qrcode.getCameras().then(devices => {
       if (devices && devices.length) {
         const backCam = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
+        const html5QrCode = new Html5Qrcode("reader");
         html5QrCode.start(
           backCam.id,
           { fps: 10, qrbox: 250 },
           onScan,
           err => {}
-        ).catch(err => {
-          alert("カメラが起動できません");
-        });
+        ).catch(err => alert("カメラが起動できません"));
       }
     });
   </script>
