@@ -2,8 +2,10 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ショピマネv</title>
+  <title>ショピマネ - リアルタイム共有</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
   <style>
@@ -54,32 +56,21 @@
     button:hover {
       background: #2980b9;
     }
-    #weather {
-      font-weight: bold;
-      margin-bottom: 1em;
-      text-align: center;
-      font-size: 1.1em;
-    }
-    #scan-result, #total, #budget, #remaining {
-      font-weight: bold;
-    }
     #controls {
       text-align: center;
       margin: 1em 0;
     }
+    #scan-result, #total {
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
-  <h1>📷 ショピマネ！！</h1>
+  <h1>📷 ショピマネ（リアルタイム共有）</h1>
   <div id="controls">
-    <label for="cameraSelect">カメラ選択:</label>
-    <select id="cameraSelect"></select>
-    <button onclick="startCamera()">開始</button>
-    <button onclick="stopCamera()">停止</button>
-    <button onclick="resetApp()">リセット</button>
-    <br><br>
-    <label>予算: <input type="number" id="budgetInput" onchange="setBudget()"> 円</label>
-    <p>残り予算：<span id="remaining">---</span> 円</p>
+    <label for="listId">リストID:</label>
+    <input type="text" id="listId" placeholder="例: mylist">
+    <button onclick="connectList()">接続</button>
   </div>
   <div id="reader"></div>
   <p>読み取りコード：<span id="scan-result">---</span></p>
@@ -91,156 +82,126 @@
     <tbody id="cart-body"></tbody>
   </table>
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
-  <script>
-    let cart = JSON.parse(localStorage.getItem("cart") || "{}");
-    let html5QrCode;
-    let currentCamId = null;
-    let lastScanned = null;
-    let paused = false;
-    let budget = parseInt(localStorage.getItem("budget")) || 0;
 
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBaVYdsPFjVDZK9K_3_BvJxnCpbVneyplQ",
+  authDomain: "syopimane.firebaseapp.com",
+  projectId: "syopimane",
+  storageBucket: "syopimane.firebasestorage.app",
+  messagingSenderId: "290212774909",
+  appId: "1:290212774909:web:a70e8096d44b56cc744f94",
+  measurementId: "G-7Z98JZQ2F1"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+  let listRef;
+  let listId = "";
+  let cart = {};
+  let html5QrCode;
+  let lastScanned = null;
+  let paused = false;
+
+  function connectList() {
+    listId = document.getElementById("listId").value.trim();
+    if (!listId) return alert("リストIDを入力してください");
+    listRef = db.ref("lists/" + listId);
+    listRef.on("value", snapshot => {
+      const val = snapshot.val();
+      if (val) {
+        cart = val;
+        updateCart();
+      }
+    });
+  }
+
+  function updateCart() {
     const cartBody = document.getElementById("cart-body");
     const totalEl = document.getElementById("total");
-    const scanResult = document.getElementById("scan-result");
-    const remainingEl = document.getElementById("remaining");
-
-    function saveCart() {
-      localStorage.setItem("cart", JSON.stringify(cart));
+    cartBody.innerHTML = "";
+    let total = 0;
+    for (const code in cart) {
+      const item = cart[code];
+      const subtotal = item.price * item.qty;
+      total += subtotal;
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td contenteditable onblur="editName('${code}', this.textContent)">${item.name}</td>
+        <td contenteditable onblur="editPrice('${code}', this.textContent)">${item.price}</td>
+        <td>${item.qty}</td>
+        <td>
+          <button onclick="changeQty('${code}', -1)">−</button>
+          <button onclick="changeQty('${code}', 1)">＋</button>
+          <button onclick="removeItem('${code}')">🗑️</button>
+        </td>
+      `;
+      cartBody.appendChild(row);
     }
+    totalEl.textContent = total;
+  }
 
-    function updateCart() {
-      cartBody.innerHTML = "";
-      let total = 0;
-      for (const code in cart) {
-        const item = cart[code];
-        const subtotal = item.price * item.qty;
-        total += subtotal;
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td contenteditable onblur="editName('${code}', this.textContent)">${item.name}</td>
-          <td contenteditable onblur="editPrice('${code}', this.textContent)">${item.price}</td>
-          <td>${item.qty}</td>
-          <td>
-            <button onclick="changeQty('${code}', -1)">−</button>
-            <button onclick="changeQty('${code}', 1)">＋</button>
-            <button onclick="removeItem('${code}')">🗑️</button>
-          </td>
-        `;
-        cartBody.appendChild(row);
-      }
-      totalEl.textContent = total;
-      remainingEl.textContent = budget - total;
+  function editName(code, name) {
+    cart[code].name = name;
+    saveCart();
+  }
+
+  function editPrice(code, price) {
+    const p = parseInt(price);
+    if (!isNaN(p)) {
+      cart[code].price = p;
       saveCart();
     }
+  }
 
-    function editName(code, newName) {
-      cart[code].name = newName;
-      updateCart();
-    }
+  function changeQty(code, delta) {
+    cart[code].qty += delta;
+    if (cart[code].qty <= 0) delete cart[code];
+    saveCart();
+  }
 
-    function editPrice(code, newPrice) {
-      const price = parseInt(newPrice);
-      if (!isNaN(price)) {
-        cart[code].price = price;
-        updateCart();
-      }
-    }
+  function removeItem(code) {
+    delete cart[code];
+    saveCart();
+  }
 
-    function changeQty(code, delta) {
-      cart[code].qty += delta;
-      if (cart[code].qty <= 0) delete cart[code];
-      updateCart();
-    }
+  function saveCart() {
+    if (listRef) listRef.set(cart);
+  }
 
-    function removeItem(code) {
-      delete cart[code];
-      updateCart();
-    }
-
-    function onScan(code) {
-      if (paused || code === lastScanned) return;
-      paused = true;
-      lastScanned = code;
-      scanResult.textContent = code;
-      document.getElementById("beep-sound").play();
-      if (cart[code]) {
-        cart[code].qty++;
-        updateCart();
+  function onScan(code) {
+    if (paused || code === lastScanned) return;
+    paused = true;
+    lastScanned = code;
+    document.getElementById("scan-result").textContent = code;
+    document.getElementById("beep-sound").play();
+    if (cart[code]) {
+      cart[code].qty++;
+      saveCart();
+      resumeScan();
+    } else {
+      const name = prompt("商品名を入力してください：") || "不明";
+      const price = parseInt(prompt("価格を入力してください："), 10);
+      if (isNaN(price)) {
+        alert("価格が無効です");
         resumeScan();
-      } else {
-        const name = prompt("商品名を入力してください：") || "不明";
-        const price = parseInt(prompt("価格を入力してください："), 10);
-        if (isNaN(price)) {
-          alert("価格が無効です。スキャンを中止します。");
-          resumeScan();
-          return;
-        }
-        cart[code] = { name, price, qty: 1 };
-        updateCart();
-        resumeScan();
+        return;
       }
+      cart[code] = { name, price, qty: 1 };
+      saveCart();
+      resumeScan();
     }
+  }
 
-    function resumeScan() {
-      setTimeout(() => { paused = false; lastScanned = null; }, 1000);
-    }
+  function resumeScan() {
+    setTimeout(() => { paused = false; lastScanned = null; }, 1000);
+  }
 
-    function setBudget() {
-      budget = parseInt(document.getElementById("budgetInput").value) || 0;
-      localStorage.setItem("budget", budget);
-      updateCart();
-    }
-
-    async function startCamera() {
-      if (!currentCamId) return;
-      if (html5QrCode) {
-        try {
-          await html5QrCode.stop();
-          await html5QrCode.clear();
-        } catch (err) {
-          console.warn("カメラ停止時にエラー:", err);
-        }
-      }
-      html5QrCode = new Html5Qrcode("reader");
-      try {
-        await html5QrCode.start(currentCamId, { fps: 10, qrbox: 250 }, onScan);
-      } catch (err) {
-        alert("カメラの起動に失敗しました: " + err);
-      }
-    }
-
-    function stopCamera() {
-      if (html5QrCode) html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
-    }
-
-    function resetApp() {
-      if (confirm("すべてのデータをリセットしますか？")) {
-        cart = {};
-        budget = 0;
-        localStorage.clear();
-        document.getElementById("budgetInput").value = "";
-        updateCart();
-      }
-    }
-
-    Html5Qrcode.getCameras().then(devices => {
-      const select = document.getElementById("cameraSelect");
-      devices.forEach(device => {
-        const option = document.createElement("option");
-        option.value = device.id;
-        option.text = device.label || `カメラ ${device.id}`;
-        select.appendChild(option);
-      });
-      if (devices.length > 0) {
-        currentCamId = devices[0].id;
-        select.value = currentCamId;
-      }
-      select.onchange = () => {
-        currentCamId = select.value;
-      };
-    });
-
-    updateCart();
-  </script>
+  Html5Qrcode.getCameras().then(devices => {
+    const camId = devices[0].id;
+    html5QrCode = new Html5Qrcode("reader");
+    html5QrCode.start(camId, { fps: 10, qrbox: 250 }, onScan);
+  });
+</script>
 </body>
 </html>
