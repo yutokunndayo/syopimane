@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ショピマネ</title>
+  <title>ショピマネv</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
@@ -44,7 +44,7 @@
     }
     button {
       padding: 0.3em 0.7em;
-      margin: 0 0.2em;
+      margin: 0.2em;
       border: none;
       border-radius: 5px;
       background: #3498db;
@@ -76,6 +76,7 @@
     <select id="cameraSelect"></select>
     <button onclick="startCamera()">開始</button>
     <button onclick="stopCamera()">停止</button>
+    <button onclick="resetApp()">リセット</button>
     <br><br>
     <label>予算: <input type="number" id="budgetInput" onchange="setBudget()"> 円</label>
     <p>残り予算：<span id="remaining">---</span> 円</p>
@@ -181,7 +182,7 @@
     }
 
     function resumeScan() {
-      setTimeout(() => { paused = false; }, 1000);
+      setTimeout(() => { paused = false; lastScanned = null; }, 1000);
     }
 
     function setBudget() {
@@ -190,15 +191,36 @@
       updateCart();
     }
 
-    function startCamera() {
+    async function startCamera() {
       if (!currentCamId) return;
-      if (html5QrCode) html5QrCode.stop().catch(() => {});
+      if (html5QrCode) {
+        try {
+          await html5QrCode.stop();
+          await html5QrCode.clear();
+        } catch (err) {
+          console.warn("カメラ停止時にエラー:", err);
+        }
+      }
       html5QrCode = new Html5Qrcode("reader");
-      html5QrCode.start(currentCamId, { fps: 10, qrbox: 250 }, onScan);
+      try {
+        await html5QrCode.start(currentCamId, { fps: 10, qrbox: 250 }, onScan);
+      } catch (err) {
+        alert("カメラの起動に失敗しました: " + err);
+      }
     }
 
     function stopCamera() {
       if (html5QrCode) html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+    }
+
+    function resetApp() {
+      if (confirm("すべてのデータをリセットしますか？")) {
+        cart = {};
+        budget = 0;
+        localStorage.clear();
+        document.getElementById("budgetInput").value = "";
+        updateCart();
+      }
     }
 
     Html5Qrcode.getCameras().then(devices => {
