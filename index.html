@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ショピマネv7</title>
+  <title>ショピマネ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
@@ -71,7 +71,6 @@
 </head>
 <body>
   <h1>📷 ショピマネ！！</h1>
-  <div id="weather">天気取得中...</div>
   <div id="controls">
     <label for="cameraSelect">カメラ選択:</label>
     <select id="cameraSelect"></select>
@@ -92,19 +91,21 @@
   </table>
   <audio id="beep-sound" src="beep.mp3" preload="auto"></audio>
   <script>
-    const APP_ID = "1085166348461729249";
-    const cart = {};
+    let cart = JSON.parse(localStorage.getItem("cart") || "{}");
     let html5QrCode;
     let currentCamId = null;
     let lastScanned = null;
     let paused = false;
-    let budget = 0;
+    let budget = parseInt(localStorage.getItem("budget")) || 0;
 
     const cartBody = document.getElementById("cart-body");
     const totalEl = document.getElementById("total");
     const scanResult = document.getElementById("scan-result");
-    const weatherEl = document.getElementById("weather");
     const remainingEl = document.getElementById("remaining");
+
+    function saveCart() {
+      localStorage.setItem("cart", JSON.stringify(cart));
+    }
 
     function updateCart() {
       cartBody.innerHTML = "";
@@ -128,6 +129,7 @@
       }
       totalEl.textContent = total;
       remainingEl.textContent = budget - total;
+      saveCart();
     }
 
     function editName(code, newName) {
@@ -154,21 +156,6 @@
       updateCart();
     }
 
-    function fetchRakutenProduct(jan, callback) {
-      const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706?applicationId=${APP_ID}&keyword=${jan}`;
-      fetch(url)
-        .then(res => res.json())
-        .then(data => {
-          const items = data.Items;
-          if (items && items.length > 0) {
-            callback(items[0].Item.itemName || "商品名不明");
-          } else {
-            callback(null);
-          }
-        })
-        .catch(() => callback(null));
-    }
-
     function onScan(code) {
       if (paused || code === lastScanned) return;
       paused = true;
@@ -180,18 +167,16 @@
         updateCart();
         resumeScan();
       } else {
-        fetchRakutenProduct(code, name => {
-          if (!name) name = prompt("商品名を入力してください：") || "不明";
-          const price = parseInt(prompt("価格を入力してください："), 10);
-          if (isNaN(price)) {
-            alert("価格が無効です。スキャンを中止します。");
-            resumeScan();
-            return;
-          }
-          cart[code] = { name, price, qty: 1 };
-          updateCart();
+        const name = prompt("商品名を入力してください：") || "不明";
+        const price = parseInt(prompt("価格を入力してください："), 10);
+        if (isNaN(price)) {
+          alert("価格が無効です。スキャンを中止します。");
           resumeScan();
-        });
+          return;
+        }
+        cart[code] = { name, price, qty: 1 };
+        updateCart();
+        resumeScan();
       }
     }
 
@@ -199,30 +184,9 @@
       setTimeout(() => { paused = false; }, 1000);
     }
 
-    function showWeather() {
-      const apiKey = "54cca6a7e7354f32b07174617251306";
-      const city = "Osaka";
-      const url = `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${city}&hours=1&lang=ja`;
-      fetch(url)
-        .then(res => res.json())
-        .then(data => {
-          const hourForecast = data.forecast.forecastday[0].hour;
-          const now = new Date();
-          const nextHour = (now.getHours() + 1) % 24;
-          const nextWeather = hourForecast.find(h => new Date(h.time).getHours() === nextHour);
-          if (!nextWeather) {
-            weatherEl.textContent = "1時間後の天気が取得できません";
-            return;
-          }
-          const condition = nextWeather.condition.text;
-          const emoji = condition.includes("晴") ? "☀️" : condition.includes("雨") ? "🌧️" : condition.includes("曇") ? "☁️" : "❓";
-          weatherEl.textContent = `1時間後の天気（大阪）：${emoji} ${condition}`;
-        })
-        .catch(() => weatherEl.textContent = "天気取得に失敗しました");
-    }
-
     function setBudget() {
       budget = parseInt(document.getElementById("budgetInput").value) || 0;
+      localStorage.setItem("budget", budget);
       updateCart();
     }
 
@@ -237,25 +201,24 @@
       if (html5QrCode) html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
     }
 
-   Html5Qrcode.getCameras().then(devices => {
-  const select = document.getElementById("cameraSelect");
-  devices.forEach(device => {
-    const option = document.createElement("option");
-    option.value = device.id;
-    option.text = device.label || `カメラ ${device.id}`;
-    select.appendChild(option);
-  });
-  if (devices.length > 0) {
-    currentCamId = devices[0].id;
-    select.value = currentCamId;
-  }
-  select.onchange = () => {
-    currentCamId = select.value;
-  };
-});
+    Html5Qrcode.getCameras().then(devices => {
+      const select = document.getElementById("cameraSelect");
+      devices.forEach(device => {
+        const option = document.createElement("option");
+        option.value = device.id;
+        option.text = device.label || `カメラ ${device.id}`;
+        select.appendChild(option);
+      });
+      if (devices.length > 0) {
+        currentCamId = devices[0].id;
+        select.value = currentCamId;
+      }
+      select.onchange = () => {
+        currentCamId = select.value;
+      };
+    });
 
-
-    showWeather();
+    updateCart();
   </script>
 </body>
 </html>
